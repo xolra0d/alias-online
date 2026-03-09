@@ -8,10 +8,8 @@ import (
 
 func main() {
 	r := gin.Default()
-	r.LoadHTMLGlob("templates/*")
 
-	r.GET("/", startHandle)
-	r.POST("/create-room", createRoomHandle)
+	// r.POST("/create-room", createRoomHandle)
 
 	log.Fatal(r.Run())
 }

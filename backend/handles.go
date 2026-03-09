@@ -18,11 +18,6 @@ func availableLanguages() []string {
 	return []string{"en", "ru"}
 }
 
-func startHandle(c *gin.Context) {
-	c.HTML(200, "index.html", gin.H{
-		"languages": availableLanguages(),
-	})
-}
 
 func createRoomHandle(c *gin.Context) {
 	var data CreateRoomData
@@ -30,5 +25,5 @@ func createRoomHandle(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	c.Redirect(http.StatusSeeOther, "/dsadsadsda")
+	// c.Redirect(http.StatusSeeOther, "/dsadsadsda")
 }
