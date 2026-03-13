@@ -7,9 +7,42 @@ import (
 )
 
 func main() {
-	r := gin.Default()
+	pgPool, err := InitPool()
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer pgPool.Close()
+	postgres := &Postgres{pgPool}
+	handles := &Handles{postgres}
 
-	// r.POST("/create-room", createRoomHandle)
+	router := gin.Default()
+	router.Use(gin.Logger())
+	router.Use(gin.Recovery())
 
-	log.Fatal(r.Run())
+	{
+		api := router.Group("/api")
+		api.GET("/ok", func(c *gin.Context) {
+			c.JSON(200, gin.H{"ok": true})
+		})
+		api.GET("/available-vocabs", handles.AvailableLanguages)
+		api.POST("/create-user", handles.CreateUser)
+
+		{
+			protected := api.Group("/protected")
+			protected.Use(handles.UserAuthMiddleware())
+			protected.GET("/ok", func(c *gin.Context) {
+				c.JSON(200, gin.H{"ok": true})
+			})
+			protected.POST("/create-room", handles.CreateRoom)
+
+			protected.POST("/ws", handles.InitWS)
+
+			{
+				//ws := protected.Group("/ws")
+
+			}
+		}
+	}
+
+	log.Fatal(router.Run())
 }
