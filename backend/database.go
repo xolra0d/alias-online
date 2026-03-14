@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base32"
 	"encoding/hex"
 	"errors"
 	"log"
@@ -44,12 +45,12 @@ type UserCredentials struct {
 }
 
 func generateSecret() (string, error) {
-	b := make([]byte, 16)
-	_, err := rand.Read(b)
+	b := [16]byte{}
+	_, err := rand.Read(b[:])
 	if err != nil {
 		return "", err
 	}
-	return hex.EncodeToString(b), nil
+	return hex.EncodeToString(b[:]), nil
 }
 
 func generateFunnyName() string {
@@ -94,8 +95,9 @@ func (p *Postgres) ValidateUser(ctx context.Context, credentials UserCredentials
 }
 
 func generateRoomId() string {
-	num := mrand.Uint32()
-	return strconv.FormatUint(uint64(num), 36)
+	data := [5]byte{}
+	_, _ = rand.Read(data[:]) // possible collision at ~1 million games.
+	return base32.StdEncoding.EncodeToString(data[:])
 }
 
 func (p *Postgres) AddRoom(ctx context.Context, adminId uuid.UUID, language string, rudeWords bool, additionalVocabulary []string, clock int) (string, error) {
@@ -106,4 +108,28 @@ func (p *Postgres) AddRoom(ctx context.Context, adminId uuid.UUID, language stri
 		return "", err
 	}
 	return roomId, nil
+}
+
+func (p *Postgres) LoadRoom(ctx context.Context, roomId string) (*Room, error) {
+	return &Room{}, nil // todo: load
+}
+
+func (p *Postgres) LoadVocabs(ctx context.Context) (map[string]Vocabulary, error) {
+	vocabs := map[string]Vocabulary{}
+	query := "SELECT language, primary_words, rude_words FROM vocabularies WHERE available = TRUE"
+	rows, err := p.db.Query(ctx, query)
+	if err != nil {
+		return vocabs, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var language string
+		var primaryWords []string
+		var rudeWords []string
+		if err := rows.Scan(&language, &primaryWords, &rudeWords); err != nil {
+			return vocabs, err
+		}
+		vocabs[language] = Vocabulary{primaryWords, rudeWords}
+	}
+	return vocabs, nil
 }

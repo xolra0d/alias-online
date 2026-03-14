@@ -1,8 +1,10 @@
 package main
 
 import (
+	"context"
 	"log"
 
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 )
 
@@ -13,9 +15,20 @@ func main() {
 	}
 	defer pgPool.Close()
 	postgres := &Postgres{pgPool}
-	handles := &Handles{postgres}
+	vocabs, err := postgres.LoadVocabs(context.Background())
+	if err != nil {
+		log.Fatal(err)
+	}
+	handles := &Handles{postgres, &Rooms{}, &Vocabularies{vocabulary: vocabs}}
+
+	config := cors.DefaultConfig()
+	config.AllowOriginFunc = func(origin string) bool {
+		return true // todo change
+	}
+	config.AllowHeaders = []string{"Origin", "Content-Length", "Content-Type", "User-Id", "User-Secret"}
 
 	router := gin.Default()
+	router.Use(cors.New(config))
 	router.Use(gin.Logger())
 	router.Use(gin.Recovery())
 
@@ -34,13 +47,13 @@ func main() {
 				c.JSON(200, gin.H{"ok": true})
 			})
 			protected.POST("/create-room", handles.CreateRoom)
-
 			protected.POST("/ws", handles.InitWS)
+		}
 
-			{
-				//ws := protected.Group("/ws")
-
-			}
+		{
+			admin := api.Group("/admin")
+			admin.Use(handles.AdminAuthMiddleware())
+			admin.POST("/refresh-vocabularies", handles.RefreshVocabularies)
 		}
 	}
 
