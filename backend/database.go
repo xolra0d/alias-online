@@ -1,12 +1,14 @@
 package main
 
 import (
+	"container/ring"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base32"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"log"
 	mrand "math/rand"
 	"os"
@@ -101,17 +103,130 @@ func generateRoomId() string {
 }
 
 func (p *Postgres) AddRoom(ctx context.Context, adminId uuid.UUID, language string, rudeWords bool, additionalVocabulary []string, clock int) (string, error) {
-	query := "INSERT INTO rooms (id, admin, language, rude_words, additional_vocabulary, clock) VALUES ($1, $2, $3, $4, $5, $6)"
+	query := "INSERT INTO rooms (id, admin, seed, current_word_index, current_player_id, game_state, language, rude_words, additional_vocabulary, clock) VALUES ($1, $2, $3, $4, $5, $6)"
 	roomId := generateRoomId()
-	_, err := p.db.Exec(ctx, query, roomId, adminId, language, rudeWords, additionalVocabulary, clock)
+	seed := mrand.Int63()
+	currentWordIndex := 0
+	currentPlayerId := adminId
+	gameState := 0
+	_, err := p.db.Exec(ctx, query, roomId, adminId, seed, currentWordIndex, currentPlayerId, gameState, language, rudeWords, additionalVocabulary, clock)
 	if err != nil {
 		return "", err
 	}
 	return roomId, nil
 }
 
-func (p *Postgres) LoadRoom(ctx context.Context, roomId string) (*Room, error) {
-	return &Room{}, nil // todo: load
+func (p *Postgres) LoadRoom(ctx context.Context, roomId string, vocabs *Vocabularies) (*Room, error) {
+	var id string
+	var admin uuid.UUID
+	var seed int
+	var currentWordIndex int
+	var currentPlayerId uuid.UUID
+	var gameState int
+	var language string
+	var rudeWords bool
+	var additionalVocabulary []string
+	var clock int
+	query := "SELECT id, admin, seed, current_word_index, current_player_id, game_state, language, rude_words, additional_vocabulary, clock FROM rooms WHERE id=$1"
+	err := p.db.QueryRow(ctx, query, roomId).Scan(
+		&id,
+		&admin,
+		&seed,
+		&currentWordIndex,
+		&currentPlayerId,
+		&gameState,
+		&language,
+		&rudeWords,
+		&additionalVocabulary,
+		&clock,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	vocabs.lock.RLock()
+	wordsTotal := len(vocabs.vocabulary[language].PrimaryWords)
+	if rudeWords {
+		wordsTotal += len(vocabs.vocabulary[language].RudeWords)
+	}
+	vocabs.lock.RUnlock()
+	words := mrand.New(mrand.NewSource(int64(seed))).Perm(wordsTotal)
+
+	cfg := &RoomConfig{
+		seed,
+		words,
+		language,
+		rudeWords,
+		additionalVocabulary,
+		clock,
+	}
+
+	query = "SELECT user_id, words_tried, words_guessed FROM room_participants WHERE room_id=$1 ORDER BY turn_order ASC"
+	rows, err := p.db.Query(ctx, query, roomId)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	players := map[uuid.UUID]*Player{}
+	var queue *ring.Ring
+	var currentPlayer *ring.Ring
+
+	for rows.Next() {
+		var userId string
+		var wordsTried int
+		var wordsGuessed int
+		err = rows.Scan(&userId, &wordsTried, &wordsGuessed)
+		if err != nil {
+			return nil, err
+		}
+
+		id := uuid.MustParse(userId)
+		players[id] = &Player{
+			id,
+			make(chan []byte, 10),
+			false,
+			wordsTried,
+			wordsGuessed,
+		}
+
+		q := ring.New(1)
+		q.Value = id
+		if queue == nil {
+			queue = q
+		} else {
+			queue.Prev().Link(q)
+		}
+
+		if id == currentPlayerId {
+			currentPlayer = q
+		}
+	}
+
+	if currentPlayer == nil {
+		currentPlayer = queue
+	}
+
+	room := &Room{
+		Id:     id,
+		Admin:  admin,
+		Config: cfg,
+
+		Players: players,
+		ingest:  make(chan *ClientMessage, 50),
+		count:   0,
+		join:    make(chan *Player, 5),
+		leave:   make(chan uuid.UUID, 5),
+
+		currentPlayer: currentPlayer,
+		currentWord:   currentWordIndex,
+		State:         GameState(gameState),
+
+		// only state loaded from db is RoundOver, so no need for ticker
+		ticker:        nil,
+		RemainingTime: cfg.Clock,
+	}
+	return room, nil
 }
 
 func (p *Postgres) LoadVocabs(ctx context.Context) (map[string]Vocabulary, error) {
@@ -132,4 +247,51 @@ func (p *Postgres) LoadVocabs(ctx context.Context) (map[string]Vocabulary, error
 		vocabs[language] = Vocabulary{primaryWords, rudeWords}
 	}
 	return vocabs, nil
+}
+
+func (p *Postgres) UpdateRoomState(ctx context.Context, r *Room) error {
+	query := "UPDATE rooms SET current_word_index=$1, current_player_id=$2, game_state=$3 WHERE id=$4"
+
+	player, ok := r.currentPlayer.Value.(*Player)
+	if !ok {
+		panic("invalid player type")
+	}
+
+	_, err := p.db.Exec(ctx, query, r.currentWord, player.Id, r.State, r.Id)
+	if err != nil {
+		return err
+	}
+
+	turnOrder := make(map[uuid.UUID]int, r.currentPlayer.Len())
+	head := r.currentPlayer
+	for head.Value.(uuid.UUID) != r.Admin {
+		head = head.Next()
+	}
+	for i := 0; i < head.Len(); i++ {
+		id := head.Move(i).Value.(uuid.UUID)
+		turnOrder[id] = i
+	}
+
+	query = `INSERT INTO room_participants (room_id, user_id, words_tried, words_guessed, turn_order)
+        VALUES ($1, $2, $3, $4, $5)
+        ON CONFLICT (room_id, user_id)
+        DO UPDATE SET
+            words_tried    = EXCLUDED.words_tried,
+            words_guessed  = EXCLUDED.words_guessed,
+            turn_order     = EXCLUDED.turn_order;`
+
+	batch := &pgx.Batch{}
+	for _, pl := range r.Players {
+		batch.Queue(query, r.Id, pl.Id, pl.WordsTried, pl.WordsGuessed, turnOrder[pl.Id])
+	}
+
+	results := p.db.SendBatch(ctx, batch)
+	defer results.Close()
+
+	for range r.Players {
+		if _, err := results.Exec(); err != nil {
+			return fmt.Errorf("batch upsert participant: %w", err)
+		}
+	}
+	return nil
 }

@@ -19,7 +19,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	handles := &Handles{postgres, &Rooms{}, &Vocabularies{vocabulary: vocabs}}
+	handles := &Handles{postgres, &Rooms{rooms: map[string]*Room{}}, &Vocabularies{vocabulary: vocabs}}
 
 	config := cors.DefaultConfig()
 	config.AllowOriginFunc = func(origin string) bool {
@@ -39,6 +39,7 @@ func main() {
 		})
 		api.GET("/available-vocabs", handles.AvailableLanguages)
 		api.POST("/create-user", handles.CreateUser)
+		api.GET("/ws/:roomId", handles.InitWS)
 
 		{
 			protected := api.Group("/protected")
@@ -47,7 +48,6 @@ func main() {
 				c.JSON(200, gin.H{"ok": true})
 			})
 			protected.POST("/create-room", handles.CreateRoom)
-			protected.POST("/ws", handles.InitWS)
 		}
 
 		{

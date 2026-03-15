@@ -5,7 +5,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"github.com/gorilla/websocket"
 )
 
 type Handles struct {
@@ -59,6 +58,7 @@ func (h *Handles) UserAuthMiddleware() gin.HandlerFunc {
 	}
 }
 
+// TODO: add some envs
 func (h *Handles) AdminAuthMiddleware() gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		idString := ctx.Request.Header.Get("User-Id")
@@ -99,10 +99,12 @@ func (h *Handles) RefreshVocabularies(ctx *gin.Context) {
 }
 
 type RoomConfig struct {
-	Language             string `form:"language"`
-	RudeWords            bool   `form:"rude-words"`
-	AdditionalVocabulary string `form:"additional-vocabulary"`
-	Clock                int    `form:"clock"`
+	seed                 int
+	words                []int
+	Language             string   `form:"language" json:"language"`
+	RudeWords            bool     `form:"rude-words" json:"rude-words"`
+	AdditionalVocabulary []string `form:"additional-vocabulary" json:"additional-vocabulary"`
+	Clock                int      `form:"clock" json:"clock"`
 }
 
 func (h *Handles) CreateRoom(ctx *gin.Context) {
@@ -114,9 +116,15 @@ func (h *Handles) CreateRoom(ctx *gin.Context) {
 		return
 	}
 
-	v := strings.Split(data.AdditionalVocabulary, ",")
-	for i := range v {
-		v[i] = strings.TrimSpace(v[i])
+	var v []string
+	if len(data.AdditionalVocabulary) > 0 && data.AdditionalVocabulary[0] != "" {
+		parts := strings.Split(data.AdditionalVocabulary[0], ",")
+		for _, p := range parts {
+			p = strings.TrimSpace(p)
+			if p != "" {
+				v = append(v, p)
+			}
+		}
 	}
 
 	roomId, err := h.postgres.AddRoom(ctx.Request.Context(), adminId, data.Language, data.RudeWords, v, data.Clock)
@@ -127,19 +135,18 @@ func (h *Handles) CreateRoom(ctx *gin.Context) {
 	ctx.JSON(200, gin.H{"ok": true, "room_id": roomId})
 }
 
-var upgrader = websocket.Upgrader{
-	ReadBufferSize:  128,
-	WriteBufferSize: 128,
-}
-
 func (h *Handles) InitWS(ctx *gin.Context) {
 	roomId := ctx.Param("roomId")
 	if roomId == "" {
 		ctx.JSON(200, gin.H{"ok": false, "reason": "missing room id"})
 	}
-
-	userId := uuid.MustParse(ctx.Request.Header.Get("User-Id"))
-	if err := h.websocket.ServeWS(ctx.Writer, ctx.Request, userId, roomId, h.postgres); err != nil {
+	userId := uuid.MustParse(ctx.Query("user_id"))
+	secret := ctx.Query("user_secret")
+	if err := h.postgres.ValidateUser(ctx.Request.Context(), UserCredentials{userId, secret}); err != nil {
+		ctx.JSON(200, gin.H{"ok": false, "reason": err.Error()})
+		return
+	}
+	if err := h.websocket.ServeWS(ctx.Writer, ctx.Request, userId, roomId, h.postgres, h.vocabs); err != nil {
 		ctx.JSON(200, gin.H{"ok": false, "reason": err.Error()})
 	}
 }

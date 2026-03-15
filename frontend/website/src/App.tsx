@@ -3,8 +3,9 @@ import { ThemeProvider } from "@mui/material/styles";
 import { CssBaseline } from "@mui/material";
 import useColorTheme from "./theme/use-color-theme";
 import Layout from "./components/Layout";
-import Play from "./components/Play";
+import Home from "./components/Home.tsx";
 import About from "./components/About";
+import Play from "./components/Play.tsx";
 
 const router = createBrowserRouter([
   {
@@ -12,6 +13,10 @@ const router = createBrowserRouter([
     children: [
       {
         path: "/",
+        Component: Home,
+      },
+      {
+        path: "/play/:room_id",
         Component: Play,
       },
       {
@@ -20,7 +25,7 @@ const router = createBrowserRouter([
       },
       {
         path: "*",
-        Component: Play,
+        Component: Home,
       },
     ],
   },
