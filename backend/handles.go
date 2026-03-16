@@ -116,7 +116,7 @@ func (h *Handles) CreateRoom(ctx *gin.Context) {
 		return
 	}
 
-	var v []string
+	v := []string{}
 	if len(data.AdditionalVocabulary) > 0 && data.AdditionalVocabulary[0] != "" {
 		parts := strings.Split(data.AdditionalVocabulary[0], ",")
 		for _, p := range parts {
@@ -126,7 +126,6 @@ func (h *Handles) CreateRoom(ctx *gin.Context) {
 			}
 		}
 	}
-
 	roomId, err := h.postgres.AddRoom(ctx.Request.Context(), adminId, data.Language, data.RudeWords, v, data.Clock)
 	if err != nil {
 		ctx.JSON(200, gin.H{"ok": false, "reason": err.Error()})

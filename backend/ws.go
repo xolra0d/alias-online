@@ -42,6 +42,7 @@ const (
 	StartRound
 	GetWord
 	TryGuess
+	FinishGame
 )
 
 type ServerMessageType int
@@ -80,6 +81,7 @@ type GameState int
 const (
 	RoundOver GameState = iota
 	Explaining
+	Finished
 )
 
 type Room struct {
@@ -101,12 +103,20 @@ type Room struct {
 }
 
 func (r *Room) ToMap() map[string]any {
+	var currentPlayer uuid.UUID
+	if r.currentPlayer != nil {
+		id, ok := r.currentPlayer.Value.(uuid.UUID)
+		if ok {
+			currentPlayer = id
+		}
+	}
 	return map[string]any{
 		"admin":          r.Admin,
 		"config":         r.Config,
 		"players":        r.Players,
 		"game_state":     r.State,
 		"remaining_time": r.RemainingTime,
+		"current_player": currentPlayer,
 	}
 }
 
@@ -139,8 +149,20 @@ func (r *Room) Run(postgres *Postgres, vocabs *Vocabularies, rooms *Rooms) {
 			r.handleMessage(msg, vocabs)
 		case player := <-r.join:
 			r.handleJoin(player)
+
+			for range r.Players {
+				if !r.Players[r.currentPlayer.Value.(uuid.UUID)].Ready {
+					r.currentPlayer = r.currentPlayer.Next()
+				}
+			}
 		case id := <-r.leave:
 			r.handleLeave(id, postgres, rooms)
+
+			for range r.Players {
+				if !r.Players[r.currentPlayer.Value.(uuid.UUID)].Ready {
+					r.currentPlayer = r.currentPlayer.Next()
+				}
+			}
 		}
 	}
 }
@@ -154,13 +176,20 @@ func (r *Room) handleMessage(msg *ClientMessage, vocabs *Vocabularies) {
 		case StartRound:
 			id, ok := r.currentPlayer.Value.(uuid.UUID)
 			if !ok {
-				panic(r.currentPlayer)
+				panic("invalid player type in ring")
 			}
 			if msg.UserId != id {
 				return
 			}
 			r.State = Explaining
 			r.ticker = time.NewTicker(time.Second) // update Room.RemainingTime every second.
+			r.ReportUpdate()
+		case FinishGame:
+			if msg.UserId != r.Admin {
+				return
+			}
+			r.State = Finished
+
 			r.ReportUpdate()
 		}
 	case Explaining:
@@ -170,7 +199,7 @@ func (r *Room) handleMessage(msg *ClientMessage, vocabs *Vocabularies) {
 		case GetWord:
 			id, ok := r.currentPlayer.Value.(uuid.UUID)
 			if !ok {
-				panic(r.currentPlayer)
+				panic("invalid player type in ring")
 			}
 			if msg.UserId != id {
 				return
@@ -216,6 +245,10 @@ func (r *Room) handleMessage(msg *ClientMessage, vocabs *Vocabularies) {
 				}
 				r.Players[msg.UserId].toSend <- b
 			}
+		}
+	case Finished:
+		if msg.MsgType == GetState {
+			r.sendState(msg.UserId)
 		}
 	}
 }

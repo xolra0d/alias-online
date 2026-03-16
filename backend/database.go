@@ -13,6 +13,7 @@ import (
 	mrand "math/rand"
 	"os"
 	"strconv"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -103,9 +104,10 @@ func generateRoomId() string {
 }
 
 func (p *Postgres) AddRoom(ctx context.Context, adminId uuid.UUID, language string, rudeWords bool, additionalVocabulary []string, clock int) (string, error) {
-	query := "INSERT INTO rooms (id, admin, seed, current_word_index, current_player_id, game_state, language, rude_words, additional_vocabulary, clock) VALUES ($1, $2, $3, $4, $5, $6)"
+	fmt.Println(additionalVocabulary == nil)
+	query := "INSERT INTO rooms (id, admin, seed, current_word_index, current_player_id, game_state, language, rude_words, additional_vocabulary, clock) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)"
 	roomId := generateRoomId()
-	seed := mrand.Int63()
+	seed := mrand.Int31()
 	currentWordIndex := 0
 	currentPlayerId := adminId
 	gameState := 0
@@ -206,7 +208,6 @@ func (p *Postgres) LoadRoom(ctx context.Context, roomId string, vocabs *Vocabula
 	if currentPlayer == nil {
 		currentPlayer = queue
 	}
-
 	room := &Room{
 		Id:     id,
 		Admin:  admin,
@@ -223,7 +224,7 @@ func (p *Postgres) LoadRoom(ctx context.Context, roomId string, vocabs *Vocabula
 		State:         GameState(gameState),
 
 		// only state loaded from db is RoundOver, so no need for ticker
-		ticker:        nil,
+		ticker:        &time.Ticker{},
 		RemainingTime: cfg.Clock,
 	}
 	return room, nil
@@ -252,19 +253,22 @@ func (p *Postgres) LoadVocabs(ctx context.Context) (map[string]Vocabulary, error
 func (p *Postgres) UpdateRoomState(ctx context.Context, r *Room) error {
 	query := "UPDATE rooms SET current_word_index=$1, current_player_id=$2, game_state=$3 WHERE id=$4"
 
-	player, ok := r.currentPlayer.Value.(*Player)
+	playerId, ok := r.currentPlayer.Value.(uuid.UUID)
 	if !ok {
 		panic("invalid player type")
 	}
 
-	_, err := p.db.Exec(ctx, query, r.currentWord, player.Id, r.State, r.Id)
+	_, err := p.db.Exec(ctx, query, r.currentWord, playerId, r.State, r.Id)
 	if err != nil {
 		return err
 	}
 
 	turnOrder := make(map[uuid.UUID]int, r.currentPlayer.Len())
 	head := r.currentPlayer
-	for head.Value.(uuid.UUID) != r.Admin {
+	for i := 0; i < head.Len(); i++ {
+		if head.Value.(uuid.UUID) == r.Admin {
+			break
+		}
 		head = head.Next()
 	}
 	for i := 0; i < head.Len(); i++ {
