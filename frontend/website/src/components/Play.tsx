@@ -16,9 +16,11 @@ import {
     Divider,
     IconButton,
     InputAdornment,
-    Snackbar
+    Snackbar,
+    useTheme
 } from "@mui/material";
 import SendIcon from "@mui/icons-material/Send";
+import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 
 interface CreateUserResponse {
     ok: boolean;
@@ -82,6 +84,7 @@ const SERVER_WRONG_GUESS = 5;
 export default function Play() {
     const { room_id } = useParams<{ room_id: string }>();
     const navigate = useNavigate();
+    const theme = useTheme();
     const [error, setError] = useState<string | null>(null);
     const [connecting, setConnecting] = useState(true);
     const [gameState, setGameState] = useState<GameState | null>(null);
@@ -276,6 +279,13 @@ export default function Play() {
         navigate("/");
     };
 
+    const handleShare = () => {
+        const url = window.location.href;
+        navigator.clipboard.writeText(url).then(() => {
+            setLastGuessResult({ msg: "Room link copied to clipboard!", type: 'success' });
+        });
+    };
+
     const renderPlayerCircle = () => {
         if (!gameState) return null;
 
@@ -339,11 +349,14 @@ export default function Play() {
                             <Tooltip title={`${player.ready ? "Ready" : "Not Ready"} | Guessed: ${player.words_guessed}/${player.words_tried}`}>
                                 <Avatar
                                     sx={{
-                                        width: 70,
-                                        height: 70,
-                                        border: `4px solid ${is_current ? "#f50057" : (player.ready ? "#4caf50" : "#ff9800")}`,
-                                        boxShadow: is_admin ? "0 0 15px #ffeb3b" : "none",
-                                        bgcolor: is_current ? "secondary.light" : "grey.400"
+                                        width: 72,
+                                        height: 72,
+                                        border: `4px solid ${is_current ? theme.palette.secondary.main : (player.ready ? theme.palette.success.main : theme.palette.warning.main)}`,
+                                        boxShadow: is_admin ? `0 0 16px ${theme.palette.primary.main}` : "none",
+                                        bgcolor: is_current ? theme.palette.secondary.light : theme.palette.grey[400],
+                                        color: is_current ? theme.palette.secondary.contrastText : "white",
+                                        transition: "all 0.3s ease",
+                                        transform: is_current ? "scale(1.1)" : "none",
                                     }}
                                 >
                                     {player.id.slice(0, 2).toUpperCase()}
@@ -375,7 +388,17 @@ export default function Play() {
                 <Typography variant="h4">
                     Alias Online - Room: {room_id?.slice(0, 8)}
                 </Typography>
-                <Box sx={{ width: 120 }} /> {/* Spacer for centering title */}
+                <Box>
+                    <Button 
+                        variant="contained" 
+                        size="small" 
+                        startIcon={<ContentCopyIcon />} 
+                        onClick={handleShare}
+                        sx={{ borderRadius: 3, px: 2 }}
+                    >
+                        Share
+                    </Button>
+                </Box>
             </Box>
 
             {error && (

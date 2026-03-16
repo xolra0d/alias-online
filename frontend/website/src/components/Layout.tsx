@@ -9,13 +9,13 @@ export default function Layout() {
   return (
     <Box sx={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}>
       <Header />
-      <Toolbar />
+      <Toolbar sx={{ mb: 2 }} />
       <Stack
-        component="article"
-        maxWidth={720}
+        component="main"
+        maxWidth={960}
         mx="auto"
-        px={{ xs: 2, sm: 0 }}
-        sx={{ flex: 1, width: "100%" }}
+        px={{ xs: 2, sm: 3 }}
+        sx={{ flex: 1, width: "100%", py: 4 }}
       >
         <Outlet />
       </Stack>

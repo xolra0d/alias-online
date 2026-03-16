@@ -1,39 +1,49 @@
 import Box from "@mui/material/Box";
 import Container from "@mui/material/Container";
-import Paper from "@mui/material/Paper";
+import Typography from "@mui/material/Typography";
 import Link from "@mui/material/Link";
 
 export default function Footer() {
   return (
-    <Paper
-      sx={{
-        bottom: 0,
-      }}
+    <Box
       component="footer"
-      variant="outlined"
+      sx={{
+        py: 4,
+        px: 2,
+        mt: "auto",
+        backgroundColor: (theme) =>
+          theme.palette.mode === "light"
+            ? theme.palette.grey[100]
+            : theme.palette.grey[900],
+      }}
     >
       <Container maxWidth="lg">
         <Box
           sx={{
-            flexGrow: 1,
-            justifyContent: "center",
             display: "flex",
-            mb: 2,
+            flexDirection: "column",
+            alignItems: "center",
+            gap: 1,
           }}
         >
+          <Typography variant="body2" color="text.secondary">
+            © {new Date().getFullYear()} Alias Online. Built with love.
+          </Typography>
           <Link
             href="mailto:a@xolra0d.com"
+            color="primary"
             sx={{
               textDecoration: "none",
+              fontWeight: 500,
               "&:hover": {
                 textDecoration: "underline",
               },
             }}
           >
-            Email me
+            Contact Support
           </Link>
         </Box>
       </Container>
-    </Paper>
+    </Box>
   );
 }

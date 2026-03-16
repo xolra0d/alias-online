@@ -43,6 +43,7 @@ const (
 	GetWord
 	TryGuess
 	FinishGame
+	SkipWord
 )
 
 type ServerMessageType int
@@ -157,12 +158,6 @@ func (r *Room) Run(postgres *Postgres, vocabs *Vocabularies, rooms *Rooms) {
 			}
 		case id := <-r.leave:
 			r.handleLeave(id, postgres, rooms)
-
-			for range r.Players {
-				if !r.Players[r.currentPlayer.Value.(uuid.UUID)].Ready {
-					r.currentPlayer = r.currentPlayer.Next()
-				}
-			}
 		}
 	}
 }
@@ -204,16 +199,27 @@ func (r *Room) handleMessage(msg *ClientMessage, vocabs *Vocabularies) {
 			if msg.UserId != id {
 				return
 			}
+			word := r.CurrentWord(vocabs)
+			fmt.Println(word)
 			b, err := json.Marshal(ServerMessage{
 				MsgType: YourWord,
 				MsgData: map[string]any{
-					"word": r.CurrentWord(vocabs),
+					"word": word,
 				},
 			})
 			if err != nil {
 				panic(err)
 			}
 			r.Players[msg.UserId].toSend <- b
+		case SkipWord:
+			id, ok := r.currentPlayer.Value.(uuid.UUID)
+			if !ok {
+				panic("invalid player type in ring")
+			}
+			if msg.UserId != id {
+				return
+			}
+			3
 		case TryGuess:
 			g, ok := msg.MsgData["guess"]
 			if !ok {
@@ -300,6 +306,7 @@ func (r *Room) getWordAt(vocabs *Vocabularies, index int) string {
 	if index < 0 || index >= len(r.Config.words) {
 		return ""
 	}
+
 	i := r.Config.words[index]
 	vocabs.lock.RLock()
 	defer vocabs.lock.RUnlock()

@@ -151,6 +151,7 @@ func (p *Postgres) LoadRoom(ctx context.Context, roomId string, vocabs *Vocabula
 	if rudeWords {
 		wordsTotal += len(vocabs.vocabulary[language].RudeWords)
 	}
+	wordsTotal += len(additionalVocabulary)
 	vocabs.lock.RUnlock()
 	words := mrand.New(mrand.NewSource(int64(seed))).Perm(wordsTotal)
 

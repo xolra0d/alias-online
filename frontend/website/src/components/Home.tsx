@@ -12,6 +12,8 @@ import {
   Button,
   CircularProgress,
   Alert,
+  Paper,
+  Divider,
 } from "@mui/material";
 import {useNavigate} from "react-router";
 
@@ -136,7 +138,6 @@ export default function Home() {
 
       const data: CreateRoomResponse = await response.json();
       if (data.ok) {
-        // console.log("Room created, ID:", data.room_id);
         navigate(`/play/${data.room_id}`);
       } else {
         setError(`Failed to create room: ${data.reason}`);
@@ -148,88 +149,104 @@ export default function Home() {
 
   if (loading) {
     return (
-      <Box display="flex" justifyContent="center" mt={4}>
+      <Box display="flex" justifyContent="center" alignItems="center" minHeight="50vh">
         <CircularProgress />
       </Box>
     );
   }
 
   return (
-    <Box sx={{ maxWidth: 600, mx: "auto", mt: 4, p: 2 }}>
-      <Typography variant="h4" gutterBottom>
-        Create a Room
-      </Typography>
+    <Box sx={{ maxWidth: 640, mx: "auto" }}>
+      <Box sx={{ mb: 4, textAlign: "center" }}>
+        <Typography variant="h3" component="h1" gutterBottom sx={{ fontWeight: 800 }}>
+          Play Alias Online
+        </Typography>
+        <Typography variant="h6" color="text.secondary" sx={{ fontWeight: 400 }}>
+          Explain words to your friends and have fun! Create a room to start.
+        </Typography>
+      </Box>
 
-      {error && (
-        <Alert severity="error" sx={{ mb: 2 }}>
-          {error}
-        </Alert>
-      )}
+      <Paper elevation={0} sx={{ p: { xs: 3, sm: 4 }, borderRadius: 4, border: "1px solid", borderColor: "divider" }}>
+        <Typography variant="h5" gutterBottom sx={{ mb: 3 }}>
+          Room Settings
+        </Typography>
 
-      <form onSubmit={handleSubmit}>
-        <FormControl component="fieldset" fullWidth margin="normal">
-          <FormLabel component="legend">Language</FormLabel>
-          <RadioGroup
-            name="language"
-            value={formData.language}
-            onChange={handleInputChange}
+        {error && (
+          <Alert severity="error" sx={{ mb: 3, borderRadius: 2 }}>
+            {error}
+          </Alert>
+        )}
+
+        <form onSubmit={handleSubmit}>
+          <FormControl component="fieldset" fullWidth margin="normal">
+            <FormLabel component="legend" sx={{ fontWeight: 600, mb: 1 }}>Language</FormLabel>
+            <RadioGroup
+              name="language"
+              row
+              value={formData.language}
+              onChange={handleInputChange}
+              sx={{ gap: 2 }}
+            >
+              {languages.map((lang) => (
+                <FormControlLabel
+                  key={lang}
+                  value={lang}
+                  control={<Radio />}
+                  label={lang}
+                />
+              ))}
+            </RadioGroup>
+          </FormControl>
+
+          <Divider sx={{ my: 3 }} />
+
+          <Box display="flex" flexDirection="column" gap={2}>
+            <TextField
+              fullWidth
+              label="Clock in seconds"
+              name="clock"
+              type="number"
+              value={formData.clock}
+              onChange={handleInputChange}
+            />
+
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={formData["rude-words"]}
+                  onChange={handleInputChange}
+                  name="rude-words"
+                  color="secondary"
+                />
+              }
+              label="Allow rude words"
+            />
+
+            <TextField
+              fullWidth
+              label="Additional vocabulary"
+              name="additionalVocabulary"
+              placeholder="word1, word2, word3"
+              multiline
+              rows={3}
+              value={formData.additionalVocabulary}
+              onChange={handleInputChange}
+              helperText="Comma separated list of extra words"
+            />
+          </Box>
+
+          <Button
+            type="submit"
+            variant="contained"
+            color="primary"
+            fullWidth
+            size="large"
+            sx={{ mt: 4, py: 1.5, fontSize: "1.1rem", borderRadius: 3 }}
           >
-            {languages.map((lang) => (
-              <FormControlLabel
-                key={lang}
-                value={lang}
-                control={<Radio />}
-                label={lang}
-              />
-            ))}
-          </RadioGroup>
-        </FormControl>
-
-        <Box display="flex" flexDirection="column" gap={1} mb={2}>
-          <FormControlLabel
-            control={
-              <Checkbox
-                checked={formData["rude-words"]}
-                onChange={handleInputChange}
-                name="rude-words"
-              />
-            }
-            label="Allow rude words"
-          />
-        </Box>
-
-        <TextField
-          fullWidth
-          label="Additional vocabulary"
-          name="additionalVocabulary"
-          placeholder="word1,word2,word3"
-          multiline
-          rows={3}
-          value={formData.additionalVocabulary}
-          onChange={handleInputChange}
-          margin="normal"
-        />
-
-        <TextField
-          fullWidth
-          label="Clock in seconds (-1 for no clock)"
-          name="clock"
-          type="number"
-          value={formData.clock}
-          onChange={handleInputChange}
-          margin="normal"
-        />
-
-        <Button
-          type="submit"
-          variant="contained"
-          color="primary"
-          fullWidth
-          sx={{ mt: 3 }}
-        >
-          Create Room
-        </Button>
-      </form>
+            Create Room
+          </Button>
+        </form>
+      </Paper>
     </Box>
   );
 }
