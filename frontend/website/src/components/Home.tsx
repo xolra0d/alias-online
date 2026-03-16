@@ -247,6 +247,38 @@ export default function Home() {
           </Button>
         </form>
       </Paper>
+
+      <Box sx={{ mt: 6, mb: 4 }}>
+        <Typography variant="h5" gutterBottom sx={{ fontWeight: 700 }}>
+          How to Play
+        </Typography>
+        <Typography variant="body1" paragraph color="text.secondary">
+          Alias is a word-guessing game where the goal is to explain words to your teammates without using the word itself or its derivatives.
+        </Typography>
+
+        <Box sx={{ pl: 2, borderLeft: "4px solid", borderColor: "primary.main", my: 3 }}>
+          <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1 }}>
+            📜 Basic Rules:
+          </Typography>
+          <Box component="ul" sx={{ m: 0, pl: 2 }}>
+            <Typography component="li" variant="body2" sx={{ mb: 1 }}>
+              Explain the word using synonyms, antonyms, or descriptions.
+            </Typography>
+            <Typography component="li" variant="body2" sx={{ mb: 1 }}>
+              You cannot use any part of the word being explained.
+            </Typography>
+          </Box>
+        </Box>
+
+        <Alert severity="warning" sx={{ borderRadius: 3, "& .MuiAlert-message": { width: "100%" } }}>
+          <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.5 }}>
+            ⚠️ Important: Don't abuse skipping!
+          </Typography>
+          <Typography variant="body2">
+            Please don't abuse skipping words. Each room has a limited vocabulary based on the selected language. Exhausting the words will end the game for that room prematurely.
+          </Typography>
+        </Alert>
+      </Box>
     </Box>
   );
 }
