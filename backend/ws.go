@@ -43,7 +43,7 @@ const (
 	GetWord
 	TryGuess
 	FinishGame
-	SkipWord
+	GetNewWord
 )
 
 type ServerMessageType int
@@ -97,6 +97,7 @@ type Room struct {
 	leave   chan uuid.UUID
 
 	currentWord   int
+	wordShown     bool
 	currentPlayer *ring.Ring // ring of UUID TODO: report current player
 	State         GameState  `json:"game_state"`
 	ticker        *time.Ticker
@@ -145,6 +146,7 @@ func (r *Room) Run(postgres *Postgres, vocabs *Vocabularies, rooms *Rooms) {
 				}
 			}
 			r.currentWord += 1
+			r.wordShown = false
 			r.ReportUpdate()
 		case msg := <-r.ingest:
 			r.handleMessage(msg, vocabs)
@@ -178,6 +180,7 @@ func (r *Room) handleMessage(msg *ClientMessage, vocabs *Vocabularies) {
 			}
 			r.State = Explaining
 			r.ticker = time.NewTicker(time.Second) // update Room.RemainingTime every second.
+			r.wordShown = false
 			r.ReportUpdate()
 		case FinishGame:
 			if msg.UserId != r.Admin {
@@ -199,6 +202,11 @@ func (r *Room) handleMessage(msg *ClientMessage, vocabs *Vocabularies) {
 			if msg.UserId != id {
 				return
 			}
+			if !r.wordShown {
+				r.wordShown = true
+				r.Players[msg.UserId].WordsTried++
+				r.ReportUpdate()
+			}
 			word := r.CurrentWord(vocabs)
 			fmt.Println(word)
 			b, err := json.Marshal(ServerMessage{
@@ -211,7 +219,7 @@ func (r *Room) handleMessage(msg *ClientMessage, vocabs *Vocabularies) {
 				panic(err)
 			}
 			r.Players[msg.UserId].toSend <- b
-		case SkipWord:
+		case GetNewWord:
 			id, ok := r.currentPlayer.Value.(uuid.UUID)
 			if !ok {
 				panic("invalid player type in ring")
@@ -219,7 +227,22 @@ func (r *Room) handleMessage(msg *ClientMessage, vocabs *Vocabularies) {
 			if msg.UserId != id {
 				return
 			}
-			3
+			r.currentWord++
+			r.wordShown = true
+			r.Players[msg.UserId].WordsTried++
+
+			word := r.CurrentWord(vocabs)
+			b, err := json.Marshal(ServerMessage{
+				MsgType: YourWord,
+				MsgData: map[string]any{
+					"word": word,
+				},
+			})
+			if err != nil {
+				panic(err)
+			}
+			r.Players[msg.UserId].toSend <- b
+			r.ReportUpdate()
 		case TryGuess:
 			g, ok := msg.MsgData["guess"]
 			if !ok {
@@ -237,7 +260,7 @@ func (r *Room) handleMessage(msg *ClientMessage, vocabs *Vocabularies) {
 				r.Players[id].WordsGuessed++
 
 				r.currentWord++
-				r.Players[id].WordsTried++
+				r.wordShown = false
 
 				r.WordGuessed(id, msg.UserId)
 				r.ReportUpdate()

@@ -6,39 +6,39 @@ export const getDesignTokens = (mode: PaletteMode) => ({
     mode,
     ...(mode === "light"
       ? {
-          // Modern palette for light mode
+          // Standard light mode palette
           primary: {
-            main: indigo[500],
+            main: "#1976d2", // Standard MUI Blue
           },
           secondary: {
-            main: pink[500],
+            main: "#9c27b0", // Standard MUI Purple
           },
-          divider: grey[200],
+          divider: "rgba(0, 0, 0, 0.12)",
           background: {
-            default: "#f8fafc", // Slate 50
+            default: "#ffffff",
             paper: "#ffffff",
           },
           text: {
-            primary: grey[900],
-            secondary: grey[600],
+            primary: "rgba(0, 0, 0, 0.87)",
+            secondary: "rgba(0, 0, 0, 0.6)",
           },
         }
       : {
-          // Modern palette for dark mode
+          // Standard dark mode palette
           primary: {
-            main: indigo[400],
+            main: "#90caf9",
           },
           secondary: {
-            main: pink[400],
+            main: "#ce93d8",
           },
-          divider: grey[800],
+          divider: "rgba(255, 255, 255, 0.12)",
           background: {
-            default: "#0f172a", // Slate 900
-            paper: "#1e293b", // Slate 800
+            default: "#121212",
+            paper: "#1e1e1e",
           },
           text: {
-            primary: "#f8fafc",
-            secondary: grey[400],
+            primary: "#ffffff",
+            secondary: "rgba(255, 255, 255, 0.7)",
           },
         }),
   },
@@ -90,9 +90,9 @@ export const getDesignTokens = (mode: PaletteMode) => ({
       styleOverrides: {
         root: {
           boxShadow: "none",
-          backgroundColor: mode === "light" ? "rgba(255, 255, 255, 0.8)" : "rgba(15, 23, 42, 0.8)",
+          backgroundColor: mode === "light" ? "rgba(255, 255, 255, 0.9)" : "rgba(18, 18, 18, 0.9)",
           backdropFilter: "blur(8px)",
-          borderBottom: `1px solid ${mode === "light" ? grey[200] : grey[800]}`,
+          borderBottom: `1px solid ${mode === "light" ? "rgba(0, 0, 0, 0.12)" : "rgba(255, 255, 255, 0.12)"}`,
         },
       },
     },

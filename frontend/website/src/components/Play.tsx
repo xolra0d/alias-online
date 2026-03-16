@@ -72,6 +72,7 @@ const CLIENT_START_ROUND = 1;
 const CLIENT_GET_WORD = 2;
 const CLIENT_TRY_GUESS = 3;
 const CLIENT_FINISH_GAME = 4;
+const CLIENT_GET_NEW_WORD = 5;
 
 // Server Message Types
 const SERVER_NEW_UPDATE = 0;
@@ -263,6 +264,10 @@ export default function Play() {
 
     const handleFinishGame = () => {
         sendMessage(CLIENT_FINISH_GAME);
+    };
+
+    const handleSkipWord = () => {
+        sendMessage(CLIENT_GET_NEW_WORD);
     };
 
     const handleGuess = (e?: React.FormEvent) => {
@@ -469,6 +474,16 @@ export default function Play() {
                                         <Paper elevation={0} sx={{ p: 3, bgcolor: "secondary.light", color: "secondary.contrastText", mb: 2 }}>
                                             <Typography variant="h3">{currentWord || "..."}</Typography>
                                         </Paper>
+                                        <Box sx={{ display: "flex", justifyContent: "center", gap: 2, mb: 1 }}>
+                                            <Button 
+                                                variant="outlined" 
+                                                color="secondary" 
+                                                onClick={handleSkipWord}
+                                                sx={{ borderStyle: 'dashed' }}
+                                            >
+                                                Skip Word
+                                            </Button>
+                                        </Box>
                                         <Typography variant="body2">Explain this word to others without using its root!</Typography>
                                     </Box>
                                 ) : (

@@ -11,8 +11,8 @@ import { useLocation, Link } from "react-router";
 const AppBar = styled(MuiAppBar)(({ theme }) => ({
   border: "none",
   backgroundColor: theme.palette.mode === "light" 
-    ? "rgba(255, 255, 255, 0.72)" 
-    : "rgba(15, 23, 42, 0.72)",
+    ? "rgba(255, 255, 255, 0.8)" 
+    : "rgba(18, 18, 18, 0.8)",
   backdropFilter: "blur(12px)",
   position: "fixed",
   top: 0,
