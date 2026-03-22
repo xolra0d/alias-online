@@ -50,7 +50,6 @@ type ServerConfig struct {
 	MaxMessagesPerSecond int           // Env name: `MAX_MESSAGES_PER_SECOND`. Maximum messages sent per second, before connection is closed. Default: 50.
 	PingTimeout          time.Duration // Env name: `PING_TIMEOUT`. Max wait time for ping request in seconds. Default: 5.
 	WSWriteTimeout       time.Duration // Env name: `WS_WRITE_TIMEOUT`. Max wait time for writing response in seconds. Default: 5.
-	WSReadTimeout        time.Duration // Env name: `WS_READ_TIMEOUT`. Max wait time for reading request in seconds. Connection will not be reset after this timeout. Used only to do other things, while no message is present. Default: 5.
 }
 
 // Loads server config from ENV variables.
@@ -89,7 +88,6 @@ func loadServerConfig() ServerConfig {
 	maxMessagesPerSecond := stringToUInt("MAX_MESSAGES_PER_SECOND", getEnvOrFallback("MAX_MESSAGES_PER_SECOND", "50"))
 	pingTimeout := stringToSeconds("PING_TIMEOUT", getEnvOrFallback("PING_TIMEOUT", "5"))
 	wsWriteTimeout := stringToSeconds("WS_WRITE_TIMEOUT", getEnvOrFallback("WS_WRITE_TIMEOUT", "5"))
-	wsReadTimeout := stringToSeconds("WS_READ_TIMEOUT", getEnvOrFallback("WS_READ_TIMEOUT", "5"))
 
 	return ServerConfig{
 		LogMessageMaxQueue: int(logMessageMaxQueue),
@@ -126,7 +124,6 @@ func loadServerConfig() ServerConfig {
 		MaxMessagesPerSecond: int(maxMessagesPerSecond),
 		PingTimeout:          pingTimeout,
 		WSWriteTimeout:       wsWriteTimeout,
-		WSReadTimeout:        wsReadTimeout,
 	}
 }
 

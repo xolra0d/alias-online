@@ -59,7 +59,6 @@ func main() {
 		MaxMessagesPerSecond:         serverConfig.MaxMessagesPerSecond,
 		PingTimeout:                  serverConfig.PingTimeout,
 		WSWriteTimeout:               serverConfig.WSWriteTimeout,
-		WSReadTimeout:                serverConfig.WSReadTimeout,
 		LoadRoomTimeout:              serverConfig.LoadRoomTimeout,
 		SaveRoomTimeout:              serverConfig.SaveRoomTimeout,
 	}

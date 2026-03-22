@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"sync"
@@ -111,7 +110,6 @@ type Rooms struct {
 	MaxMessagesPerSecond int
 	PingTimeout          time.Duration
 	WSWriteTimeout       time.Duration
-	WSReadTimeout        time.Duration
 	LoadRoomTimeout      time.Duration
 	SaveRoomTimeout      time.Duration
 }
@@ -490,28 +488,32 @@ func (rooms *Rooms) ServeWS(w http.ResponseWriter, r *http.Request, userId uuid.
 	room.join <- player
 	defer func() { room.leave <- userId }()
 
-	errC := make(chan error, 1) // if either of goroutines errors, it sends err to another to stop.
+	ctx, cancel := context.WithCancel(r.Context())
 
 	go func() {
 		ping := time.NewTicker(time.Second * 10)
 		for {
 			select {
 			case msg := <-toSend:
-				ctx, cancel := context.WithTimeout(context.Background(), rooms.WSWriteTimeout)
-				err := c.Write(ctx, websocket.MessageBinary, msg)
-				cancel()
+				writeCtx, writeCancel := context.WithTimeout(ctx, rooms.WSWriteTimeout)
+				err := c.Write(writeCtx, websocket.MessageBinary, msg)
+				writeCancel()
 				if err != nil {
-					errC <- err
+					room.logger.Error("write error", "playerId", player.Id, "msg", msg, "err", err)
+					cancel()
 					return // this goroutine does not log errors.
 				}
 			case <-ping.C:
-				ctx, cancel := context.WithTimeout(context.Background(), rooms.PingTimeout)
-				err := c.Ping(ctx)
-				cancel()
+				pingCtx, pingCancel := context.WithTimeout(ctx, rooms.PingTimeout)
+				err := c.Ping(pingCtx)
+				pingCancel()
 				if err != nil {
-					errC <- err
-					return // this goroutine does not log errors.
+					room.logger.Error("ping error", "playerId", player.Id, "err", err)
+					cancel()
+					return
 				}
+			case <-ctx.Done():
+				return
 			}
 		}
 	}()
@@ -519,23 +521,12 @@ func (rooms *Rooms) ServeWS(w http.ResponseWriter, r *http.Request, userId uuid.
 	windowStartedAt := time.Now()
 	messagesInWindow := 0
 	for {
-		select {
-		case err := <-errC:
-			rooms.logger.Error("ws write error", "roomId", roomId, "error", err)
-			return err
-		default:
-		}
-
 		var v any
-		// ctx, cancel := context.WithTimeout(context.Background(), rooms.WSReadTimeout)
-		err := wsjson.Read(context.Background(), c, &v)
-		// cancel()
+		err := wsjson.Read(ctx, c, &v)
 		if err != nil {
-			if !errors.Is(err, context.DeadlineExceeded) {
-				rooms.logger.Error("ws read error", "roomId", roomId, "error", err)
-				return err
-			}
-			continue
+			cancel()
+			rooms.logger.Error("ws read error", "roomId", roomId, "error", err)
+			return err
 		}
 
 		if rooms.MaxMessagesPerSecond > 0 {
@@ -548,6 +539,7 @@ func (rooms *Rooms) ServeWS(w http.ResponseWriter, r *http.Request, userId uuid.
 			if messagesInWindow > rooms.MaxMessagesPerSecond {
 				_ = c.Close(websocket.StatusPolicyViolation, "too many messages")
 				rooms.logger.Error("websocket message rate limit exceeded", "roomId", roomId, "playerId", userId)
+				cancel()
 				return fmt.Errorf("websocket message rate limit exceeded")
 			}
 		}
@@ -555,10 +547,12 @@ func (rooms *Rooms) ServeWS(w http.ResponseWriter, r *http.Request, userId uuid.
 		m, ok := v.(map[string]any)
 		if !ok {
 			err := fmt.Errorf("invalid client msg: %v", v)
+			cancel()
 			return err
 		}
 		msg, err := toClientMessage(m)
 		if err != nil {
+			cancel()
 			return err
 		}
 		room.ingest <- msg
