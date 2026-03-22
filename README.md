@@ -53,4 +53,4 @@ Server message types:
  
 ## Docs
 
-(Backend docs)[BACKEND.md]
+[Backend docs](BACKEND.md)
