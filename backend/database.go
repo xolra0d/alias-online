@@ -24,6 +24,14 @@ type Postgres struct {
 	logger  *PrefixLogger
 }
 
+func NewPostgres(db *pgxpool.Pool, secrets *Secrets, logger *PrefixLogger) *Postgres {
+	return &Postgres{
+		db:      db,
+		secrets: secrets,
+		logger:  logger,
+	}
+}
+
 // UserCredentials stores user credentials sent while creating user.
 type UserCredentials struct {
 	Id     uuid.UUID `json:"id"`

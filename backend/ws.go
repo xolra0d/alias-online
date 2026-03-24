@@ -101,17 +101,47 @@ type Rooms struct {
 	logger *PrefixLogger
 	lock   sync.RWMutex
 
-	MinClock                     int
-	MaxClock                     int
-	MaxAdditionalVocabularyWords int
-	MaxAdditionalWordLength      int
+	minClock                     int
+	maxClock                     int
+	maxAdditionalVocabularyWords int
+	maxAdditionalWordLength      int
 
-	WSOriginPatterns     []string
-	MaxMessagesPerSecond int
-	PingTimeout          time.Duration
-	WSWriteTimeout       time.Duration
-	LoadRoomTimeout      time.Duration
-	SaveRoomTimeout      time.Duration
+	wsOriginPatterns     []string
+	maxMessagesPerSecond int
+	pingTimeout          time.Duration
+	wsWriteTimeout       time.Duration
+	loadRoomTimeout      time.Duration
+	saveRoomTimeout      time.Duration
+}
+
+func NewRooms(
+	rooms map[string]*Room,
+	logger *PrefixLogger,
+	minClock int,
+	maxClock int,
+	maxAdditionalVocabularyWords int,
+	maxAdditionalWordLength int,
+	wsOriginPatterns []string,
+	maxMessagesPerSecond int,
+	pingTimeout time.Duration,
+	wsWriteTimeout time.Duration,
+	loadRoomTimeout time.Duration,
+	saveRoomTimeout time.Duration,
+) *Rooms {
+	return &Rooms{
+		rooms:                        rooms,
+		logger:                       logger,
+		minClock:                     minClock,
+		maxClock:                     maxClock,
+		maxAdditionalVocabularyWords: maxAdditionalVocabularyWords,
+		maxAdditionalWordLength:      maxAdditionalWordLength,
+		wsOriginPatterns:             wsOriginPatterns,
+		maxMessagesPerSecond:         maxMessagesPerSecond,
+		pingTimeout:                  pingTimeout,
+		wsWriteTimeout:               wsWriteTimeout,
+		loadRoomTimeout:              loadRoomTimeout,
+		saveRoomTimeout:              saveRoomTimeout,
+	}
 }
 
 func (r *Room) IncCurrentPlayer() {
@@ -173,7 +203,7 @@ func (r *Room) Run(postgres *Postgres, vocabs *Vocabularies, rooms *Rooms) {
 			r.handleLeave(id)
 			r.logger.Info("player left", "playerId", id)
 			if r.readyCount == 0 {
-				ctx, cancel := context.WithTimeout(context.Background(), rooms.SaveRoomTimeout)
+				ctx, cancel := context.WithTimeout(context.Background(), rooms.saveRoomTimeout)
 				err := r.SaveState(ctx, postgres)
 				cancel()
 				if err != nil {
@@ -445,7 +475,7 @@ func (rooms *Rooms) ServeWS(w http.ResponseWriter, r *http.Request, userId uuid.
 
 	var loadedRoom *Room
 	if !ok {
-		ctx, cancel := context.WithTimeout(context.Background(), rooms.LoadRoomTimeout)
+		ctx, cancel := context.WithTimeout(context.Background(), rooms.loadRoomTimeout)
 		newRoom, err := postgres.LoadRoom(ctx, roomId, vocabs)
 		cancel()
 		if err != nil {
@@ -455,8 +485,8 @@ func (rooms *Rooms) ServeWS(w http.ResponseWriter, r *http.Request, userId uuid.
 	}
 
 	acceptOptions := &websocket.AcceptOptions{}
-	if len(rooms.WSOriginPatterns) > 0 {
-		acceptOptions.OriginPatterns = rooms.WSOriginPatterns
+	if len(rooms.wsOriginPatterns) > 0 {
+		acceptOptions.OriginPatterns = rooms.wsOriginPatterns
 	}
 	c, err := websocket.Accept(w, r, acceptOptions)
 	if err != nil {
@@ -495,7 +525,7 @@ func (rooms *Rooms) ServeWS(w http.ResponseWriter, r *http.Request, userId uuid.
 		for {
 			select {
 			case msg := <-toSend:
-				writeCtx, writeCancel := context.WithTimeout(ctx, rooms.WSWriteTimeout)
+				writeCtx, writeCancel := context.WithTimeout(ctx, rooms.wsWriteTimeout)
 				err := c.Write(writeCtx, websocket.MessageBinary, msg)
 				writeCancel()
 				if err != nil {
@@ -504,7 +534,7 @@ func (rooms *Rooms) ServeWS(w http.ResponseWriter, r *http.Request, userId uuid.
 					return // this goroutine does not log errors.
 				}
 			case <-ping.C:
-				pingCtx, pingCancel := context.WithTimeout(ctx, rooms.PingTimeout)
+				pingCtx, pingCancel := context.WithTimeout(ctx, rooms.pingTimeout)
 				err := c.Ping(pingCtx)
 				pingCancel()
 				if err != nil {
@@ -529,14 +559,14 @@ func (rooms *Rooms) ServeWS(w http.ResponseWriter, r *http.Request, userId uuid.
 			return err
 		}
 
-		if rooms.MaxMessagesPerSecond > 0 {
+		if rooms.maxMessagesPerSecond > 0 {
 			now := time.Now()
 			if now.Sub(windowStartedAt) >= time.Second {
 				windowStartedAt = now
 				messagesInWindow = 0
 			}
 			messagesInWindow++
-			if messagesInWindow > rooms.MaxMessagesPerSecond {
+			if messagesInWindow > rooms.maxMessagesPerSecond {
 				_ = c.Close(websocket.StatusPolicyViolation, "too many messages")
 				rooms.logger.Error("websocket message rate limit exceeded", "roomId", roomId, "playerId", userId)
 				cancel()

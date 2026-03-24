@@ -52,8 +52,8 @@ type ServerConfig struct {
 	WSWriteTimeout       time.Duration // Env name: `WS_WRITE_TIMEOUT`. Max wait time for writing response in seconds. Default: 5.
 }
 
-// Loads server config from ENV variables.
-func loadServerConfig() ServerConfig {
+// LoadServerConfig loads server config from ENV variables.
+func LoadServerConfig() ServerConfig {
 	logMessageMaxQueue := stringToUInt("LOG_MESSAGE_MAX_QUEUE", getEnvOrFallback("LOG_MESSAGE_MAX_QUEUE", "100"))
 	loadVocabsTimeout := stringToSeconds("LOAD_VOCABS_TIMEOUT", getEnvOrFallback("LOAD_VOCABS_TIMEOUT", "5"))
 

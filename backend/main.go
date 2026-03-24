@@ -13,7 +13,7 @@ import (
 )
 
 func main() {
-	serverConfig := loadServerConfig()
+	serverConfig := LoadServerConfig()
 
 	baseLogger := NewBaseLogger(serverConfig.LogMessageMaxQueue)
 	go baseLogger.StartLogging()
@@ -27,17 +27,14 @@ func main() {
 		return
 	}
 	defer pgPool.Close()
-	postgres := &Postgres{
-		pgPool,
-		&Secrets{
-			baseLogger.WithPrefix("SECRETS"),
-			serverConfig.Argon2idTime,
-			serverConfig.Argon2idMemory,
-			serverConfig.Argon2idThreads,
-			serverConfig.Argon2idOutLen,
-		},
-		baseLogger.WithPrefix("POSTGRES"),
-	}
+	secrets := NewSecrets(
+		baseLogger.WithPrefix("SECRETS"),
+		serverConfig.Argon2idTime,
+		serverConfig.Argon2idMemory,
+		serverConfig.Argon2idThreads,
+		serverConfig.Argon2idOutLen,
+	)
+	postgres := NewPostgres(pgPool, secrets, baseLogger.WithPrefix("POSTGRES"))
 
 	ctx, cancel := context.WithTimeout(context.Background(), serverConfig.LoadVocabsTimeout)
 	vocabs, err := postgres.LoadVocabs(ctx)
@@ -47,30 +44,29 @@ func main() {
 		return
 	}
 
-	rooms := &Rooms{
-		rooms:  map[string]*Room{},
-		logger: baseLogger.WithPrefix("ROOMS"),
+	rooms := NewRooms(
+		map[string]*Room{},
+		baseLogger.WithPrefix("ROOMS"),
+		serverConfig.MinClock,
+		serverConfig.MaxClock,
+		serverConfig.MaxAdditionalVocabularyWords,
+		serverConfig.MaxAdditionalWordLength,
+		strings.Split(serverConfig.WSOriginPatterns, ","),
+		serverConfig.MaxMessagesPerSecond,
+		serverConfig.PingTimeout,
+		serverConfig.WSWriteTimeout,
+		serverConfig.LoadRoomTimeout,
+		serverConfig.SaveRoomTimeout,
+	)
 
-		MinClock:                     serverConfig.MinClock,
-		MaxClock:                     serverConfig.MaxClock,
-		MaxAdditionalVocabularyWords: serverConfig.MaxAdditionalVocabularyWords,
-		MaxAdditionalWordLength:      serverConfig.MaxAdditionalWordLength,
-		WSOriginPatterns:             strings.Split(serverConfig.WSOriginPatterns, ","),
-		MaxMessagesPerSecond:         serverConfig.MaxMessagesPerSecond,
-		PingTimeout:                  serverConfig.PingTimeout,
-		WSWriteTimeout:               serverConfig.WSWriteTimeout,
-		LoadRoomTimeout:              serverConfig.LoadRoomTimeout,
-		SaveRoomTimeout:              serverConfig.SaveRoomTimeout,
-	}
-	handles := &Handles{
+	handles := NewHandles(
 		postgres,
 		rooms,
 		&Vocabularies{vocabulary: vocabs},
 		baseLogger.WithPrefix("HANDLES"),
-
 		serverConfig.CreateUserTimeout,
 		serverConfig.CreateRoomTimeout,
-	}
+	)
 	corsRules := cors.New(cors.Options{
 		AllowedOrigins:   strings.Split(serverConfig.AllowedOrigins, ","),
 		AllowedMethods:   []string{"GET", "POST", "OPTIONS"},

@@ -17,17 +17,33 @@ import (
 type Secrets struct {
 	logger *PrefixLogger
 
-	Argon2idTime    uint32
-	Argon2idMemory  uint32
-	Argon2idThreads uint8
-	Argon2idOutLen  uint32
+	argon2idTime    uint32
+	argon2idMemory  uint32
+	argon2idThreads uint8
+	argon2idOutLen  uint32
+}
+
+func NewSecrets(
+	logger *PrefixLogger,
+	Argon2idTime uint32,
+	Argon2idMemory uint32,
+	Argon2idThreads uint8,
+	Argon2idOutLen uint32,
+) *Secrets {
+	return &Secrets{
+		logger:          logger,
+		argon2idTime:    Argon2idTime,
+		argon2idMemory:  Argon2idMemory,
+		argon2idThreads: Argon2idThreads,
+		argon2idOutLen:  Argon2idOutLen,
+	}
 }
 
 // hashSecret hashes any password with random salt and returns result in phcformat string.
 // More: https://github.com/P-H-C/phc-string-format/blob/master/phc-sf-spec.md
 func (s *Secrets) hashSecret(secret string) string {
 	salt := s.GenerateSecretBase32()
-	output := argon2.IDKey([]byte(secret), []byte(salt), s.Argon2idTime, s.Argon2idMemory, s.Argon2idThreads, s.Argon2idOutLen)
+	output := argon2.IDKey([]byte(secret), []byte(salt), s.argon2idTime, s.argon2idMemory, s.argon2idThreads, s.argon2idOutLen)
 
 	newParam := func(k string, v uint) encode.KV[encode.String, encode.Byte, encode.Uint] {
 		return encode.NewKV(encode.NewByte('='), encode.NewString(k), encode.NewUint(v))
@@ -38,10 +54,10 @@ func (s *Secrets) hashSecret(secret string) string {
 		option.Value(encode.NewUint(uint(argon2.Version))),
 		option.Value(encode.NewList(
 			encode.NewByte(','),
-			newParam("t", uint(s.Argon2idTime)),
-			newParam("m", uint(s.Argon2idMemory)),
-			newParam("p", uint(s.Argon2idThreads)),
-			newParam("l", uint(s.Argon2idOutLen)),
+			newParam("t", uint(s.argon2idTime)),
+			newParam("m", uint(s.argon2idMemory)),
+			newParam("p", uint(s.argon2idThreads)),
+			newParam("l", uint(s.argon2idOutLen)),
 		)),
 		option.Value(encode.NewBase64(salt)),
 		option.Value(encode.NewBase64(output)),

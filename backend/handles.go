@@ -21,8 +21,26 @@ type Handles struct {
 	vocabs   *Vocabularies
 	logger   *PrefixLogger
 
-	CreateUserTimeout time.Duration
-	CreateRoomTimeout time.Duration
+	createUserTimeout time.Duration
+	createRoomTimeout time.Duration
+}
+
+func NewHandles(
+	postgres *Postgres,
+	rooms *Rooms,
+	vocabs *Vocabularies,
+	logger *PrefixLogger,
+	createUserTimeout time.Duration,
+	createRoomTimeout time.Duration,
+) *Handles {
+	return &Handles{
+		postgres:          postgres,
+		rooms:             rooms,
+		vocabs:            vocabs,
+		logger:            logger,
+		createUserTimeout: createUserTimeout,
+		createRoomTimeout: createRoomTimeout,
+	}
 }
 
 // RoomConfig holds specific room configuration
@@ -79,7 +97,7 @@ func (h *Handles) AvailableLanguages(w http.ResponseWriter, _ *http.Request) {
 
 // CreateUser generates random login, name, secret for user and returns as Credentials.
 func (h *Handles) CreateUser(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(r.Context(), h.CreateUserTimeout)
+	ctx, cancel := context.WithTimeout(r.Context(), h.createUserTimeout)
 	defer cancel()
 	credentials, err := h.postgres.CreateUser(ctx)
 	if err != nil {
@@ -149,8 +167,8 @@ func (h *Handles) CreateRoom(w http.ResponseWriter, r *http.Request) {
 
 	additional, err := normalizeAdditionalVocabulary(
 		r.PostFormValue("additional-vocabulary"),
-		h.rooms.MaxAdditionalWordLength,
-		h.rooms.MaxAdditionalVocabularyWords,
+		h.rooms.maxAdditionalWordLength,
+		h.rooms.maxAdditionalVocabularyWords,
 	)
 
 	if err != nil {
@@ -169,8 +187,8 @@ func (h *Handles) CreateRoom(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	if int(clock) < h.rooms.MinClock || int(clock) > h.rooms.MaxClock {
-		err = WriteJSON(w, http.StatusBadRequest, P{"err": fmt.Sprintf("invalid clock: must be between %d and %d", h.rooms.MinClock, h.rooms.MaxClock)})
+	if int(clock) < h.rooms.minClock || int(clock) > h.rooms.maxClock {
+		err = WriteJSON(w, http.StatusBadRequest, P{"err": fmt.Sprintf("invalid clock: must be between %d and %d", h.rooms.minClock, h.rooms.maxClock)})
 		if err != nil {
 			h.logger.Error("could not write response", "err", err)
 		}
@@ -184,7 +202,7 @@ func (h *Handles) CreateRoom(w http.ResponseWriter, r *http.Request) {
 		Clock:                int(clock),
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), h.CreateRoomTimeout)
+	ctx, cancel := context.WithTimeout(r.Context(), h.createRoomTimeout)
 	defer cancel()
 	roomId, err := h.postgres.AddRoom(ctx, adminId, cfg)
 	if err != nil {
