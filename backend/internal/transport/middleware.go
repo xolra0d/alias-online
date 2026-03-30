@@ -1,10 +1,12 @@
-package main
+package transport
 
 import (
 	"net/http"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/xolra0d/alias-online/internal/config"
+	"github.com/xolra0d/alias-online/internal/database"
 )
 
 type Middleware func(http.Handler) http.Handler
@@ -38,7 +40,7 @@ func (h *Handles) Auth() Middleware {
 				}
 				return
 			}
-			ok := h.postgres.ValidateUser(r.Context(), UserCredentials{Id: parsedId, Secret: secret})
+			ok := h.postgres.ValidateUser(r.Context(), database.UserCredentials{Id: parsedId, Secret: secret})
 			if !ok {
 				err := WriteJSON(w, http.StatusUnauthorized, P{"err": "invalid credentials"})
 				if err != nil {
@@ -85,13 +87,14 @@ func ReadUserIP(r *http.Request) string {
 
 // IpRateLimiter limits resource usage based on IP from ReadUserIP.
 func (h *Handles) IpRateLimiter(l *RateLimiter) Middleware {
+	const op = "transport.ipRateLimiter"
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ip := ReadUserIP(r)
 			if ip == "" {
 				err := WriteJSON(w, http.StatusBadRequest, P{"err": "missing ip address"})
 				if err != nil {
-					h.logger.Error("could not write response", "err", err)
+					h.logger.Error(op, "could not write response", "err", err)
 				}
 				return
 			}
@@ -104,12 +107,13 @@ func (h *Handles) IpRateLimiter(l *RateLimiter) Middleware {
 }
 
 // Logging Logs each request.
-func Logging(logger *PrefixLogger) Middleware {
+func Logging(logger *config.Logger) Middleware {
+	const op = "transport.Logging"
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			start := time.Now()
 			next.ServeHTTP(w, r)
-			logger.Info("request", "method", r.Method, "path", r.URL.Path, "duration", time.Since(start))
+			logger.Info(op, "request", "method", r.Method, "path", r.URL.Path, "duration", time.Since(start))
 		})
 	}
 }

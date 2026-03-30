@@ -1,4 +1,4 @@
-package main
+package config
 
 import (
 	"fmt"
@@ -26,10 +26,10 @@ type ServerConfig struct {
 	// HTTP
 	AllowedOrigins           string        // Env name: `ALLOWED_ORIGINS`. Origins to respond to (e.g., http://website.com:12), separetad by comma. Default: none, will exit, if not set.
 	RunningAddr              string        // Env name: `RUNNING_ADDR`. Address to run web on. Default: `:8080`.
-	ReadTimeout              time.Duration // Env name: `READ_TIMEOUT`. Docs: net/http.Server.ReadTimeout in seconds. Default: 5.
-	WriteTimeout             time.Duration // Env name: `WRITE_TIMEOUT`. Docs: net/http.Server.WriteTimeout in seconds. Default: 5.
-	IdleTimeout              time.Duration // Env name: `IDLE_TIMEOUT`. Docs: net/http.Server.IdleTimeout in seconds. Default: 30.
-	ShutdownTimeout          time.Duration // Env name: `SHUTDOWN_TIMEOUT`. Time for http server to shut down in seconds. Default: 10.
+	ReadTimeout              time.Duration // Env name: `READ_TIMEOUT`. Docs: net/transport.Server.ReadTimeout in seconds. Default: 5.
+	WriteTimeout             time.Duration // Env name: `WRITE_TIMEOUT`. Docs: net/transport.Server.WriteTimeout in seconds. Default: 5.
+	IdleTimeout              time.Duration // Env name: `IDLE_TIMEOUT`. Docs: net/transport.Server.IdleTimeout in seconds. Default: 30.
+	ShutdownTimeout          time.Duration // Env name: `SHUTDOWN_TIMEOUT`. Time for transport server to shut down in seconds. Default: 10.
 	CreateUserLimitPerWindow int           // Env name: `CREATE_USER_LIMIT_PER_WINDOW`. Number of users allowed to be created for `LimiterWindow` time. Default: 30.
 	CreateRoomLimitPerWindow int           // Env name: `CREATE_ROOM_LIMIT_PER_WINDOW`. Number of rooms allowed to be created for `LimiterWindow` time. Default: 30.
 	LimiterCleanupEvery      int           // Env name: `LIMITER_CLEANUP_EVERY`. Removes outdated entries after `LimiterCleanupEvery` requests handled. Default: 100.

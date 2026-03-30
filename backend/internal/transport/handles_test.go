@@ -1,4 +1,4 @@
-package main
+package transport
 
 import (
 	"encoding/json"
@@ -6,18 +6,18 @@ import (
 	"net/http/httptest"
 	"reflect"
 	"testing"
+
+	"github.com/xolra0d/alias-online/internal/room"
 )
 
 func TestAvailableLanguagesSortsEnglishFirstThenAscending(t *testing.T) {
 	h := &Handles{
-		vocabs: &Vocabularies{
-			vocabulary: map[string]*Vocabulary{
-				"Zulu":    {},
-				"French":  {},
-				"English": {},
-				"Arabic":  {},
-			},
-		},
+		vocabs: room.NewVocabularies(map[string]*room.Vocabulary{
+			"Zulu":    {},
+			"French":  {},
+			"English": {},
+			"Arabic":  {},
+		}),
 	}
 
 	rec := httptest.NewRecorder()

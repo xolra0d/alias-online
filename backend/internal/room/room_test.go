@@ -1,17 +1,11 @@
-package main
+package room
 
 import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/xolra0d/alias-online/internal/config"
 )
-
-func DummyPrefixLogger() *PrefixLogger {
-	return &PrefixLogger{
-		Prefix: "TEST",
-		q:      make(chan *logMessage, 10),
-	}
-}
 
 func newRoomForMessageTests() (*Room, *Vocabularies, uuid.UUID, uuid.UUID) {
 	explainer := uuid.MustParse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
@@ -31,12 +25,12 @@ func newRoomForMessageTests() (*Room, *Vocabularies, uuid.UUID, uuid.UUID) {
 			explainer: {Id: explainer, Name: "Explainer", toSend: make(chan []byte, 32), Ready: true},
 			guesser:   {Id: guesser, Name: "Guesser", toSend: make(chan []byte, 32), Ready: true},
 		},
-		turnOrder:     []uuid.UUID{explainer, guesser},
-		currentPlayer: 0,
-		currentWord:   0,
-		wordShown:     false,
-		State:         Explaining,
-		logger:        DummyPrefixLogger(),
+		TurnOrder:        []uuid.UUID{explainer, guesser},
+		currentPlayer:    0,
+		CurrentWordIndex: 0,
+		wordShown:        false,
+		State:            Explaining,
+		logger:           DummyPrefixLogger(),
 	}
 
 	vocabs := &Vocabularies{
@@ -62,8 +56,8 @@ func TestHandleMessageTryGuessIncrementsScore(t *testing.T) {
 	if room.Players[explainer].WordsGuessed != 1 {
 		t.Fatalf("expected explainer guessed score to be 1, got %d", room.Players[explainer].WordsGuessed)
 	}
-	if room.currentWord != 1 {
-		t.Fatalf("expected current word index to advance to 1, got %d", room.currentWord)
+	if room.CurrentWordIndex != 1 {
+		t.Fatalf("expected current word index to advance to 1, got %d", room.CurrentWordIndex)
 	}
 	if room.wordShown {
 		t.Fatal("expected wordShown to reset to false after successful guess")

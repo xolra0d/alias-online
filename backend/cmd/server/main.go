@@ -10,43 +10,47 @@ import (
 	"syscall"
 
 	"github.com/rs/cors"
+	"github.com/xolra0d/alias-online/internal/config"
+	"github.com/xolra0d/alias-online/internal/database"
+	"github.com/xolra0d/alias-online/internal/room"
+	"github.com/xolra0d/alias-online/internal/transport"
 )
 
 func main() {
-	serverConfig := LoadServerConfig()
+	const op = "server.main"
 
-	baseLogger := NewBaseLogger(serverConfig.LogMessageMaxQueue)
-	go baseLogger.StartLogging()
-	defer baseLogger.EndLogging()
+	serverConfig := config.LoadServerConfig()
 
-	startupLogger := baseLogger.WithPrefix("STARTUP")
+	logger := config.NewLogger(serverConfig.LogMessageMaxQueue, os.Stdout)
+	go logger.StartLogging()
+	defer logger.EndLogging()
 
-	pgPool, err := InitPool(serverConfig.PostgresUrl)
+	pgPool, err := database.InitPool(serverConfig.PostgresUrl)
 	if err != nil {
-		startupLogger.Error(err.Error())
+		logger.Error(op, "Failed to connect to database", "error", err)
 		return
 	}
 	defer pgPool.Close()
-	secrets := NewSecrets(
-		baseLogger.WithPrefix("SECRETS"),
+	secrets := database.NewSecrets(
+		logger,
 		serverConfig.Argon2idTime,
 		serverConfig.Argon2idMemory,
 		serverConfig.Argon2idThreads,
 		serverConfig.Argon2idOutLen,
 	)
-	postgres := NewPostgres(pgPool, secrets, baseLogger.WithPrefix("POSTGRES"))
+	postgres := database.NewPostgres(pgPool, secrets, logger)
 
 	ctx, cancel := context.WithTimeout(context.Background(), serverConfig.LoadVocabsTimeout)
 	vocabs, err := postgres.LoadVocabs(ctx)
 	cancel()
 	if err != nil {
-		startupLogger.Error(err.Error())
+		logger.Error(op, "could not load vocabs", "error", err)
 		return
 	}
 
-	rooms := NewRooms(
-		map[string]*Room{},
-		baseLogger.WithPrefix("ROOMS"),
+	rooms := transport.NewRooms(
+		map[string]*room.Room{},
+		logger,
 		serverConfig.MinClock,
 		serverConfig.MaxClock,
 		serverConfig.MaxAdditionalVocabularyWords,
@@ -59,11 +63,11 @@ func main() {
 		serverConfig.SaveRoomTimeout,
 	)
 
-	handles := NewHandles(
+	handles := transport.NewHandles(
 		postgres,
 		rooms,
-		&Vocabularies{vocabulary: vocabs},
-		baseLogger.WithPrefix("HANDLES"),
+		room.NewVocabularies(vocabs),
+		logger,
 		serverConfig.CreateUserTimeout,
 		serverConfig.CreateRoomTimeout,
 	)
@@ -74,35 +78,34 @@ func main() {
 		AllowCredentials: true,
 	})
 
-	createUserLimiter := NewRateLimiter(serverConfig.CreateUserLimitPerWindow, serverConfig.LimiterWindow, serverConfig.LimiterCleanupEvery)
-	createRoomLimiter := NewRateLimiter(serverConfig.CreateRoomLimitPerWindow, serverConfig.LimiterWindow, serverConfig.LimiterCleanupEvery)
+	createUserLimiter := transport.NewRateLimiter(serverConfig.CreateUserLimitPerWindow, serverConfig.LimiterWindow, serverConfig.LimiterCleanupEvery)
+	createRoomLimiter := transport.NewRateLimiter(serverConfig.CreateRoomLimitPerWindow, serverConfig.LimiterWindow, serverConfig.LimiterCleanupEvery)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/ok", handles.Healthy)
 	mux.HandleFunc("GET /api/available-vocabs", handles.AvailableLanguages)
-	mux.Handle("POST /api/create-user", Chain(
+	mux.Handle("POST /api/create-user", transport.Chain(
 		http.HandlerFunc(handles.CreateUser),
 		handles.IpRateLimiter(createUserLimiter),
 	))
 	mux.HandleFunc("GET /api/ws/{roomId}", handles.InitWS)
 
-	mux.Handle("GET /api/protected/ok", Chain(
+	mux.Handle("GET /api/protected/ok", transport.Chain(
 		http.HandlerFunc(handles.Healthy),
 		handles.Auth(),
 	))
-	mux.Handle("POST /api/protected/create-room", Chain(
+	mux.Handle("POST /api/protected/create-room", transport.Chain(
 		http.HandlerFunc(handles.CreateRoom),
 		handles.Auth(),
 		handles.UserIdRateLimiter(createRoomLimiter),
 	))
 
-	httpLogger := baseLogger.WithPrefix("HTTP")
 	server := &http.Server{
 		Addr: serverConfig.RunningAddr,
-		Handler: Chain(
+		Handler: transport.Chain(
 			mux,
 			corsRules.Handler,
-			Logging(httpLogger),
+			transport.Logging(logger),
 		),
 		ReadTimeout:  serverConfig.ReadTimeout,
 		WriteTimeout: serverConfig.WriteTimeout,
@@ -110,9 +113,9 @@ func main() {
 	}
 
 	go func() {
-		startupLogger.Info("server started", "addr", serverConfig.RunningAddr)
+		logger.Info(op, "server started", "addr", serverConfig.RunningAddr)
 		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			startupLogger.Error("listen error", "err", err)
+			logger.Error(op, "listen error", "err", err)
 		}
 	}()
 
@@ -120,14 +123,14 @@ func main() {
 	signal.Notify(shutdown, syscall.SIGINT, syscall.SIGTERM)
 
 	<-shutdown
-	startupLogger.Info("shutdown initiated")
+	logger.Info(op, "shutdown initiated")
 
 	ctx, cancel = context.WithTimeout(context.Background(), serverConfig.ShutdownTimeout)
 	defer cancel()
 
 	if err := server.Shutdown(ctx); err != nil {
-		startupLogger.Error("shutdown failed", "err", err)
+		logger.Error(op, "shutdown failed", "err", err)
 	}
 
-	startupLogger.Info("server stopped")
+	logger.Info(op, "server stopped")
 }

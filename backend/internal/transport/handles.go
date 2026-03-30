@@ -1,4 +1,4 @@
-package main
+package transport
 
 import (
 	"context"
@@ -12,24 +12,27 @@ import (
 	"unicode/utf8"
 
 	"github.com/google/uuid"
+	"github.com/xolra0d/alias-online/internal/config"
+	"github.com/xolra0d/alias-online/internal/database"
+	"github.com/xolra0d/alias-online/internal/room"
 )
 
-// Handles holds http handles and, realistically, the state of the program.
+// Handles holds transport handles and, realistically, the state of the program.
 type Handles struct {
-	postgres *Postgres
+	postgres *database.Postgres
 	rooms    *Rooms
-	vocabs   *Vocabularies
-	logger   *PrefixLogger
+	vocabs   *room.Vocabularies
+	logger   *config.Logger
 
 	createUserTimeout time.Duration
 	createRoomTimeout time.Duration
 }
 
 func NewHandles(
-	postgres *Postgres,
+	postgres *database.Postgres,
 	rooms *Rooms,
-	vocabs *Vocabularies,
-	logger *PrefixLogger,
+	vocabs *room.Vocabularies,
+	logger *config.Logger,
 	createUserTimeout time.Duration,
 	createRoomTimeout time.Duration,
 ) *Handles {
@@ -43,33 +46,22 @@ func NewHandles(
 	}
 }
 
-// RoomConfig holds specific room configuration
-type RoomConfig struct {
-	seed                 int
-	wordsPerm            []int    // words permutation, unique for every room, dependent on seed
-	Language             string   `form:"language" json:"language"`
-	RudeWords            bool     `form:"rude-words" json:"rude-words"`
-	AdditionalVocabulary []string `form:"additional-vocabulary" json:"additional-vocabulary"`
-	Clock                int      `form:"clock" json:"clock"`
-}
-
 // Healthy handles /ok requests
 func (h *Handles) Healthy(w http.ResponseWriter, _ *http.Request) {
+	const op = "transport.Healthy"
+
 	err := WriteJSON(w, http.StatusOK, P{"ok": true})
 	if err != nil {
-		h.logger.Error("could not write response", "err", err)
+		h.logger.Error(op, "could not write response", "err", err)
 		return
 	}
 }
 
 // AvailableLanguages returns loaded vocabs names.
 func (h *Handles) AvailableLanguages(w http.ResponseWriter, _ *http.Request) {
-	h.vocabs.lock.RLock()
-	languages := make([]string, 0, len(h.vocabs.vocabulary))
-	for name := range h.vocabs.vocabulary {
-		languages = append(languages, name)
-	}
-	h.vocabs.lock.RUnlock()
+	const op = "transport.AvailableLanguages"
+
+	languages := h.vocabs.Languages()
 	slices.SortFunc(languages, func(a, b string) int {
 		aEnglish := strings.EqualFold(a, "English")
 		bEnglish := strings.EqualFold(b, "English")
@@ -90,27 +82,29 @@ func (h *Handles) AvailableLanguages(w http.ResponseWriter, _ *http.Request) {
 
 	err := WriteJSON(w, http.StatusOK, P{"languages": languages})
 	if err != nil {
-		h.logger.Error("could not write response", "err", err)
+		h.logger.Error(op, "could not write response", "err", err)
 		return
 	}
 }
 
 // CreateUser generates random login, name, secret for user and returns as Credentials.
 func (h *Handles) CreateUser(w http.ResponseWriter, r *http.Request) {
+	const op = "transport.CreateUser"
+
 	ctx, cancel := context.WithTimeout(r.Context(), h.createUserTimeout)
 	defer cancel()
 	credentials, err := h.postgres.CreateUser(ctx)
 	if err != nil {
-		h.logger.Error("could not create user", "err", err)
+		h.logger.Error(op, "could not create user", "err", err)
 		err = WriteJSON(w, http.StatusInternalServerError, P{"err": err})
 		if err != nil {
-			h.logger.Error("could not write response", "err", err)
+			h.logger.Error(op, "could not write response", "err", err)
 		}
 		return
 	}
 	err = WriteJSON(w, http.StatusOK, P{"credentials": credentials})
 	if err != nil {
-		h.logger.Error("could not write response", "err", err)
+		h.logger.Error(op, "could not write response", "err", err)
 	}
 }
 
@@ -141,17 +135,16 @@ func normalizeAdditionalVocabulary(raw string, maxWordLength int, maxWords int) 
 
 // CreateRoom validates room config from form and inserts it to database, returning roomId.
 func (h *Handles) CreateRoom(w http.ResponseWriter, r *http.Request) {
+	const op = "transport.CreateRoom"
+
 	adminId := uuid.MustParse(r.Header.Get("User-Id")) // verified at `Auth`
 
 	language := r.PostFormValue("language")
-	h.vocabs.lock.RLock()
-	_, ok := h.vocabs.vocabulary[language]
-	h.vocabs.lock.RUnlock()
-
+	ok := h.vocabs.Contains(language)
 	if !ok {
 		err := WriteJSON(w, http.StatusBadRequest, P{"err": "invalid language"})
 		if err != nil {
-			h.logger.Error("could not write response", "err", err)
+			h.logger.Error(op, "could not write response", "err", err)
 		}
 		return
 	}
@@ -160,7 +153,7 @@ func (h *Handles) CreateRoom(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		err = WriteJSON(w, http.StatusBadRequest, P{"err": "invalid rude-words"})
 		if err != nil {
-			h.logger.Error("could not write response", "err", err)
+			h.logger.Error(op, "could not write response", "err", err)
 		}
 		return
 	}
@@ -174,7 +167,7 @@ func (h *Handles) CreateRoom(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		err := WriteJSON(w, http.StatusBadRequest, P{"err": err})
 		if err != nil {
-			h.logger.Error("could not write response", "err", err)
+			h.logger.Error(op, "could not write response", "err", err)
 		}
 		return
 	}
@@ -183,19 +176,19 @@ func (h *Handles) CreateRoom(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		err = WriteJSON(w, http.StatusBadRequest, P{"err": "invalid clock"})
 		if err != nil {
-			h.logger.Error("could not write response", "err", err)
+			h.logger.Error(op, "could not write response", "err", err)
 		}
 		return
 	}
 	if int(clock) < h.rooms.minClock || int(clock) > h.rooms.maxClock {
 		err = WriteJSON(w, http.StatusBadRequest, P{"err": fmt.Sprintf("invalid clock: must be between %d and %d", h.rooms.minClock, h.rooms.maxClock)})
 		if err != nil {
-			h.logger.Error("could not write response", "err", err)
+			h.logger.Error(op, "could not write response", "err", err)
 		}
 		return
 	}
 
-	cfg := RoomConfig{
+	cfg := room.RoomConfig{
 		Language:             language,
 		RudeWords:            rudeWords,
 		AdditionalVocabulary: additional,
@@ -209,23 +202,25 @@ func (h *Handles) CreateRoom(w http.ResponseWriter, r *http.Request) {
 		h.logger.Error("could not add room", "err", err)
 		err = WriteJSON(w, http.StatusInternalServerError, P{"err": err})
 		if err != nil {
-			h.logger.Error("could not write response", "err", err)
+			h.logger.Error(op, "could not write response", "err", err)
 		}
 		return
 	}
 	err = WriteJSON(w, http.StatusOK, P{"room": roomId})
 	if err != nil {
-		h.logger.Error("could not write response", "err", err)
+		h.logger.Error(op, "could not write response", "err", err)
 	}
 }
 
-// InitWS validates user credentials and tries to update HTTP to Websocket connecton.
+// InitWS validates user credentials and tries to update HTTP to Websocket connection.
 func (h *Handles) InitWS(w http.ResponseWriter, r *http.Request) {
+	const op = "transport.InitWS"
+
 	roomId := r.PathValue("roomId")
 	if roomId == "" {
 		err := WriteJSON(w, http.StatusBadRequest, P{"err": "missing room id"})
 		if err != nil {
-			h.logger.Error("could not write response", "err", err)
+			h.logger.Error(op, "could not write response", "err", err)
 		}
 		return
 	}
@@ -234,7 +229,7 @@ func (h *Handles) InitWS(w http.ResponseWriter, r *http.Request) {
 	if id == "" {
 		err := WriteJSON(w, http.StatusBadRequest, P{"err": "missing user id"})
 		if err != nil {
-			h.logger.Error("could not write response", "err", err)
+			h.logger.Error(op, "could not write response", "err", err)
 		}
 		return
 	}
@@ -242,7 +237,7 @@ func (h *Handles) InitWS(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		err := WriteJSON(w, http.StatusBadRequest, P{"err": "invalid user id"})
 		if err != nil {
-			h.logger.Error("could not write response", "err", err)
+			h.logger.Error(op, "could not write response", "err", err)
 		}
 		return
 	}
@@ -250,7 +245,7 @@ func (h *Handles) InitWS(w http.ResponseWriter, r *http.Request) {
 	if secret == "" {
 		err := WriteJSON(w, http.StatusBadRequest, P{"err": "missing secret"})
 		if err != nil {
-			h.logger.Error("could not write response", "err", err)
+			h.logger.Error(op, "could not write response", "err", err)
 		}
 		return
 	}
@@ -258,20 +253,20 @@ func (h *Handles) InitWS(w http.ResponseWriter, r *http.Request) {
 	if name == "" {
 		err := WriteJSON(w, http.StatusBadRequest, P{"err": "missing name"})
 		if err != nil {
-			h.logger.Error("could not write response", "err", err)
+			h.logger.Error(op, "could not write response", "err", err)
 		}
 		return
 	}
-	if ok := h.postgres.ValidateUser(r.Context(), UserCredentials{Id: userId, Secret: secret}); !ok {
+	if ok := h.postgres.ValidateUser(r.Context(), database.UserCredentials{Id: userId, Secret: secret}); !ok {
 		err := WriteJSON(w, http.StatusUnauthorized, P{"err": "invalid credentials"})
 		if err != nil {
-			h.logger.Error("could not write response", "err", err)
+			h.logger.Error(op, "could not write response", "err", err)
 		}
 		return
 	}
 
 	err = h.rooms.ServeWS(w, r, userId, name, roomId, h.postgres, h.vocabs)
 	if err != nil {
-		h.logger.Error("room exit error", "err", err)
+		h.logger.Error(op, "room exit error", "err", err)
 	}
 }

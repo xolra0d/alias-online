@@ -1,4 +1,4 @@
-package main
+package database
 
 import (
 	crand "crypto/rand"
@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/xolra0d/alias-online/internal/config"
 	"go.pact.im/x/option"
 	"go.pact.im/x/phcformat"
 	"go.pact.im/x/phcformat/encode"
@@ -15,7 +16,7 @@ import (
 )
 
 type Secrets struct {
-	logger *PrefixLogger
+	logger *config.Logger
 
 	argon2idTime    uint32
 	argon2idMemory  uint32
@@ -24,7 +25,7 @@ type Secrets struct {
 }
 
 func NewSecrets(
-	logger *PrefixLogger,
+	logger *config.Logger,
 	Argon2idTime uint32,
 	Argon2idMemory uint32,
 	Argon2idThreads uint8,
@@ -68,22 +69,24 @@ func (s *Secrets) hashSecret(secret string) string {
 
 // verifyArgon2id checks that secret is the same as encoded one in phcformat hash.
 func (s *Secrets) verifyArgon2id(secret string, hash phcformat.Hash) bool {
+	const op = "database.verifyArgon2id"
+
 	paramsStr, ok := hash.Params.Unwrap()
 	if !ok {
-		s.logger.Error("params for hashing algorithm are not set", "hash", hash.String())
+		s.logger.Error(op, "params for hashing algorithm are not set", "hash", hash.String())
 		return false
 	}
 	params := make(map[string]uint32)
 	for part := range strings.SplitSeq(paramsStr, ",") {
 		kv := strings.SplitN(part, "=", 2)
 		if len(kv) != 2 {
-			s.logger.Error("params for hashing algorithm are not in key-value", "hash", hash.String())
+			s.logger.Error(op, "params for hashing algorithm are not in key-value", "hash", hash.String())
 			return false
 		}
 
 		v, err := strconv.ParseUint(kv[1], 10, 32)
 		if err != nil {
-			s.logger.Error("could not parse params for hashing algorithm", "hash", hash.String(), "name", kv[0], "val", kv[1])
+			s.logger.Error(op, "could not parse params for hashing algorithm", "hash", hash.String(), "name", kv[0], "val", kv[1])
 			return false
 		}
 		params[kv[0]] = uint32(v)
@@ -91,37 +94,37 @@ func (s *Secrets) verifyArgon2id(secret string, hash phcformat.Hash) bool {
 
 	t, ok := params["t"]
 	if !ok {
-		s.logger.Error("time is not set", "hash", hash.String())
+		s.logger.Error(op, "time is not set", "hash", hash.String())
 		return false
 	}
 	m, ok := params["m"]
 	if !ok {
-		s.logger.Error("memory is not set", "hash", hash.String())
+		s.logger.Error(op, "memory is not set", "hash", hash.String())
 		return false
 	}
 	p, ok := params["p"]
 	if !ok {
-		s.logger.Error("processors is not set", "hash", hash.String())
+		s.logger.Error(op, "processors is not set", "hash", hash.String())
 		return false
 	}
 	l, ok := params["l"]
 	if !ok {
-		s.logger.Error("length is not set", "hash", hash.String())
+		s.logger.Error(op, "length is not set", "hash", hash.String())
 		return false
 	}
 	salt, ok := hash.Salt.Unwrap()
 	if !ok {
-		s.logger.Error("salt is not set", "hash", hash.String())
+		s.logger.Error(op, "salt is not set", "hash", hash.String())
 		return false
 	}
 	saltDecoded, err := base64.RawStdEncoding.DecodeString(salt)
 	if err != nil {
-		s.logger.Error("salt decode error", "hash", hash.String(), "err", err)
+		s.logger.Error(op, "salt decode error", "hash", hash.String(), "err", err)
 		return false
 	}
 	expected, ok := hash.Output.Unwrap()
 	if !ok {
-		s.logger.Error("output is not set", "hash", hash.String(), "err", err)
+		s.logger.Error(op, "output is not set", "hash", hash.String(), "err", err)
 		return false
 	}
 	received := argon2.IDKey([]byte(secret), saltDecoded, t, m, uint8(p), l)
@@ -134,9 +137,11 @@ func (s *Secrets) verifyArgon2id(secret string, hash phcformat.Hash) bool {
 
 // VerifyPassword checks if secret is equal to hash's secret.
 func (s *Secrets) VerifyPassword(secret, hash string) bool {
+	const op = "database.VerifyPassword"
+
 	h, ok := phcformat.Parse(hash)
 	if !ok {
-		s.logger.Error("Could not decode phcformat hash", "hash", hash)
+		s.logger.Error(op, "Could not decode phcformat hash", "hash", hash)
 		return false
 	}
 
@@ -144,7 +149,7 @@ func (s *Secrets) VerifyPassword(secret, hash string) bool {
 	case "argon2id":
 		return s.verifyArgon2id(secret, h)
 	default:
-		s.logger.Warn("Invalid hash ID", "hash", hash)
+		s.logger.Warn(op, "Invalid hash ID", "hash", hash)
 		return false
 	}
 }
