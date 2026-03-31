@@ -1,4 +1,3 @@
-```sql
 CREATE TABLE IF NOT EXISTS rooms (
 	id TEXT PRIMARY KEY,
 	admin UUID NOT NULL references users(id),
@@ -13,4 +12,3 @@ CREATE TABLE IF NOT EXISTS rooms (
 	created_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	updated_at timestamp DEFAULT NULL
 );
-```

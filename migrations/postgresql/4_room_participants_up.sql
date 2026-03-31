@@ -1,4 +1,3 @@
-```sql
 CREATE TABLE IF NOT EXISTS room_participants (
    room_id TEXT REFERENCES rooms(id),
    user_id UUID REFERENCES users(id),
@@ -7,4 +6,3 @@ CREATE TABLE IF NOT EXISTS room_participants (
    turn_order SERIAL,
    PRIMARY KEY (room_id, user_id)
 );
-```
