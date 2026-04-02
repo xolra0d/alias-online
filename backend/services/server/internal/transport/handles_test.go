@@ -7,12 +7,12 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/xolra0d/alias-online/internal/room"
+	"github.com/xolra0d/alias-online/internal/rooms"
 )
 
 func TestAvailableLanguagesSortsEnglishFirstThenAscending(t *testing.T) {
 	h := &Handles{
-		vocabs: room.NewVocabularies(map[string]*room.Vocabulary{
+		vocabs: rooms.NewVocabularies(map[string]*rooms.Vocabulary{
 			"Zulu":    {},
 			"French":  {},
 			"English": {},

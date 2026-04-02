@@ -12,7 +12,7 @@ import (
 	"github.com/rs/cors"
 	"github.com/xolra0d/alias-online/internal/config"
 	"github.com/xolra0d/alias-online/internal/database"
-	"github.com/xolra0d/alias-online/internal/room"
+	"github.com/xolra0d/alias-online/internal/room_manager"
 	"github.com/xolra0d/alias-online/internal/transport"
 )
 
@@ -48,25 +48,27 @@ func main() {
 		return
 	}
 
-	rooms := transport.NewRooms(
-		map[string]*room.Room{},
-		logger,
-		serverConfig.MinClock,
-		serverConfig.MaxClock,
-		serverConfig.MaxAdditionalVocabularyWords,
-		serverConfig.MaxAdditionalWordLength,
-		strings.Split(serverConfig.WSOriginPatterns, ","),
-		serverConfig.MaxMessagesPerSecond,
-		serverConfig.PingTimeout,
-		serverConfig.WSWriteTimeout,
-		serverConfig.LoadRoomTimeout,
-		serverConfig.SaveRoomTimeout,
-	)
+	//room_worker := room_manager.NewManager(
+	//	map[string]*room_worker.Room{},
+	//	logger,
+	//	serverConfig.MinClock,
+	//	serverConfig.MaxClock,
+	//	serverConfig.MaxAdditionalVocabularyWords,
+	//	serverConfig.MaxAdditionalWordLength,
+	//	strings.Split(serverConfig.WSOriginPatterns, ","),
+	//	serverConfig.MaxMessagesPerSecond,
+	//	serverConfig.PingTimeout,
+	//	serverConfig.WSWriteTimeout,
+	//	serverConfig.LoadRoomTimeout,
+	//	serverConfig.SaveRoomTimeout,
+	//)
+
+	roomManager := room_manager.NewManager(room_manager.New)
 
 	handles := transport.NewHandles(
 		postgres,
 		rooms,
-		room.NewVocabularies(vocabs),
+		rooms.NewVocabularies(vocabs),
 		logger,
 		serverConfig.CreateUserTimeout,
 		serverConfig.CreateRoomTimeout,

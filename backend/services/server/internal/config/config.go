@@ -31,19 +31,19 @@ type ServerConfig struct {
 	IdleTimeout              time.Duration // Env name: `IDLE_TIMEOUT`. Docs: net/transport.Server.IdleTimeout in seconds. Default: 30.
 	ShutdownTimeout          time.Duration // Env name: `SHUTDOWN_TIMEOUT`. Time for transport server to shut down in seconds. Default: 10.
 	CreateUserLimitPerWindow int           // Env name: `CREATE_USER_LIMIT_PER_WINDOW`. Number of users allowed to be created for `LimiterWindow` time. Default: 30.
-	CreateRoomLimitPerWindow int           // Env name: `CREATE_ROOM_LIMIT_PER_WINDOW`. Number of rooms allowed to be created for `LimiterWindow` time. Default: 30.
+	CreateRoomLimitPerWindow int           // Env name: `CREATE_ROOM_LIMIT_PER_WINDOW`. Number of room_worker allowed to be created for `LimiterWindow` time. Default: 30.
 	LimiterCleanupEvery      int           // Env name: `LIMITER_CLEANUP_EVERY`. Removes outdated entries after `LimiterCleanupEvery` requests handled. Default: 100.
 	LimiterWindow            time.Duration // Env name: `LIMITER_WINDOW`. Defines window for limiters in seconds. Default: 60.
 	CreateUserTimeout        time.Duration // Env name: `CREATE_USER_TIMEOUT`. Defines timeout for user creation in seconds. Default: 5.
-	CreateRoomTimeout        time.Duration // Env name: `CREATE_ROOM_TIMEOUT`. Defines timeout for room creation in seconds. Default: 5.
+	CreateRoomTimeout        time.Duration // Env name: `CREATE_ROOM_TIMEOUT`. Defines timeout for room_worker creation in seconds. Default: 5.
 
 	// ROOMS
 	MinClock                     int           // Env name: `MIN_CLOCK`. Min number of seconds for clock in round. Default: 1.
 	MaxClock                     int           // Env name: `MAX_CLOCK`. Max number of seconds for clock in round. Default: 36000. (10 hours)
 	MaxAdditionalVocabularyWords int           // Env name: `MAX_ADDITIONAL_VOCABULARY_WORDS`. Max number of words in additional vocabulary. Default: 1000.
 	MaxAdditionalWordLength      int           // Env name: `MAX_ADDITIONAL_WORD_LENGTH`. Max number of runes (UTF-8 chars) in word in additional vocabulary. Default 64.
-	LoadRoomTimeout              time.Duration // Env name: `LOAD_ROOM_TIMEOUT`. Max wait time for loading room in seconds. Default: 10.
-	SaveRoomTimeout              time.Duration // Env name: `SAVE_ROOM_TIMEOUT`. Max wait time for saving room in seconds. Default: 10.
+	LoadRoomTimeout              time.Duration // Env name: `LOAD_ROOM_TIMEOUT`. Max wait time for loading room_worker in seconds. Default: 10.
+	SaveRoomTimeout              time.Duration // Env name: `SAVE_ROOM_TIMEOUT`. Max wait time for saving room_worker in seconds. Default: 10.
 
 	// WS
 	WSOriginPatterns     string        // Env name: `WS_ORIGIN_PATTERNS`. Defines allowed origins for ws connections, separetad by comma. Default: none, will exit, if not set.

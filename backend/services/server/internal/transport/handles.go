@@ -14,14 +14,15 @@ import (
 	"github.com/google/uuid"
 	"github.com/xolra0d/alias-online/internal/config"
 	"github.com/xolra0d/alias-online/internal/database"
-	"github.com/xolra0d/alias-online/internal/room"
+	"github.com/xolra0d/alias-online/internal/room_manager"
+	"github.com/xolra0d/alias-online/internal/rooms"
 )
 
 // Handles holds transport handles and, realistically, the state of the program.
 type Handles struct {
 	postgres *database.Postgres
-	rooms    *Rooms
-	vocabs   *room.Vocabularies
+	rooms    *room_manager.RoomManager
+	vocabs   *rooms.Vocabularies
 	logger   *config.Logger
 
 	createUserTimeout time.Duration
@@ -30,8 +31,8 @@ type Handles struct {
 
 func NewHandles(
 	postgres *database.Postgres,
-	rooms *Rooms,
-	vocabs *room.Vocabularies,
+	rooms *room_manager.RoomManager,
+	vocabs *rooms.Vocabularies,
 	logger *config.Logger,
 	createUserTimeout time.Duration,
 	createRoomTimeout time.Duration,
@@ -133,7 +134,7 @@ func normalizeAdditionalVocabulary(raw string, maxWordLength int, maxWords int) 
 	return slices.Collect(maps.Keys(seen)), nil
 }
 
-// CreateRoom validates room config from form and inserts it to database, returning roomId.
+// CreateRoom validates room_worker config from form and inserts it to database, returning roomId.
 func (h *Handles) CreateRoom(w http.ResponseWriter, r *http.Request) {
 	const op = "transport.CreateRoom"
 
@@ -188,7 +189,7 @@ func (h *Handles) CreateRoom(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cfg := room.RoomConfig{
+	cfg := rooms.RoomConfig{
 		Language:             language,
 		RudeWords:            rudeWords,
 		AdditionalVocabulary: additional,
@@ -199,14 +200,14 @@ func (h *Handles) CreateRoom(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	roomId, err := h.postgres.AddRoom(ctx, adminId, cfg)
 	if err != nil {
-		h.logger.Error("could not add room", "err", err)
+		h.logger.Error("could not add room_worker", "err", err)
 		err = WriteJSON(w, http.StatusInternalServerError, P{"err": err})
 		if err != nil {
 			h.logger.Error(op, "could not write response", "err", err)
 		}
 		return
 	}
-	err = WriteJSON(w, http.StatusOK, P{"room": roomId})
+	err = WriteJSON(w, http.StatusOK, P{"room_worker": roomId})
 	if err != nil {
 		h.logger.Error(op, "could not write response", "err", err)
 	}
@@ -218,7 +219,7 @@ func (h *Handles) InitWS(w http.ResponseWriter, r *http.Request) {
 
 	roomId := r.PathValue("roomId")
 	if roomId == "" {
-		err := WriteJSON(w, http.StatusBadRequest, P{"err": "missing room id"})
+		err := WriteJSON(w, http.StatusBadRequest, P{"err": "missing room_worker id"})
 		if err != nil {
 			h.logger.Error(op, "could not write response", "err", err)
 		}
@@ -265,8 +266,19 @@ func (h *Handles) InitWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = h.rooms.ServeWS(w, r, userId, name, roomId, h.postgres, h.vocabs)
+	worker, err := h.rooms.FindRoomIP(r.Context(), roomId)
 	if err != nil {
-		h.logger.Error(op, "room exit error", "err", err)
+		h.logger.Error(op, "room_worker exit error", "err", err)
+		err := WriteJSON(w, http.StatusUnauthorized, P{"err": "invalid room identifier"})
+		if err != nil {
+			h.logger.Error(op, "could not write response", "err", err)
+		}
+		return
+	}
+
+	err = WriteJSON(w, http.StatusOK, P{"roomIP": worker})
+	if err != nil {
+		h.logger.Error(op, "could not write response", "err", err)
+		return
 	}
 }

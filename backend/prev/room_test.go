@@ -1,4 +1,4 @@
-package room
+package room_worker
 
 //
 //import (
@@ -11,7 +11,7 @@ package room
 //	explainer := uuid.MustParse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
 //	guesser := uuid.MustParse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
 //
-//	room := &Room{
+//	room_worker := &Room{
 //		Id:    "TESTROOM",
 //		Admin: explainer,
 //		Config: &RoomConfig{
@@ -41,71 +41,71 @@ package room
 //		},
 //	}
 //
-//	return room, vocabs, explainer, guesser
+//	return room_worker, vocabs, explainer, guesser
 //}
 //
 //func TestHandleMessageTryGuessIncrementsScore(t *testing.T) {
-//	room, vocabs, explainer, guesser := newRoomForMessageTests()
+//	room_worker, vocabs, explainer, guesser := newRoomForMessageTests()
 //
-//	room.handleMessage(&ClientMessage{
+//	room_worker.handleMessage(&ClientMessage{
 //		UserId:  guesser,
 //		MsgType: TryGuess,
 //		MsgData: map[string]any{"guess": "cat"},
 //	}, vocabs)
 //
-//	if room.Players[explainer].WordsGuessed != 1 {
-//		t.Fatalf("expected explainer guessed score to be 1, got %d", room.Players[explainer].WordsGuessed)
+//	if room_worker.Players[explainer].WordsGuessed != 1 {
+//		t.Fatalf("expected explainer guessed score to be 1, got %d", room_worker.Players[explainer].WordsGuessed)
 //	}
-//	if room.CurrentWordIndex != 1 {
-//		t.Fatalf("expected current word index to advance to 1, got %d", room.CurrentWordIndex)
+//	if room_worker.CurrentWordIndex != 1 {
+//		t.Fatalf("expected current word index to advance to 1, got %d", room_worker.CurrentWordIndex)
 //	}
-//	if room.wordShown {
+//	if room_worker.wordShown {
 //		t.Fatal("expected wordShown to reset to false after successful guess")
 //	}
 //}
 //
 //func TestHandleMessageGetWordCountsTriedOncePerWord(t *testing.T) {
-//	room, vocabs, explainer, _ := newRoomForMessageTests()
+//	room_worker, vocabs, explainer, _ := newRoomForMessageTests()
 //
-//	room.handleMessage(&ClientMessage{
+//	room_worker.handleMessage(&ClientMessage{
 //		UserId:  explainer,
 //		MsgType: GetWord,
 //		MsgData: map[string]any{},
 //	}, vocabs)
-//	room.handleMessage(&ClientMessage{
+//	room_worker.handleMessage(&ClientMessage{
 //		UserId:  explainer,
 //		MsgType: GetWord,
 //		MsgData: map[string]any{},
 //	}, vocabs)
 //
-//	if room.Players[explainer].WordsTried != 1 {
-//		t.Fatalf("expected words tried to increase once for same word, got %d", room.Players[explainer].WordsTried)
+//	if room_worker.Players[explainer].WordsTried != 1 {
+//		t.Fatalf("expected words tried to increase once for same word, got %d", room_worker.Players[explainer].WordsTried)
 //	}
 //}
 //
 //func TestHandleMessageStartRoundOnlyCurrentPlayer(t *testing.T) {
-//	room, vocabs, explainer, guesser := newRoomForMessageTests()
-//	room.State = RoundOver
+//	room_worker, vocabs, explainer, guesser := newRoomForMessageTests()
+//	room_worker.State = RoundOver
 //
-//	room.handleMessage(&ClientMessage{
+//	room_worker.handleMessage(&ClientMessage{
 //		UserId:  guesser,
 //		MsgType: StartRound,
 //		MsgData: map[string]any{},
 //	}, vocabs)
-//	if room.State != RoundOver {
-//		t.Fatalf("expected non-current player to be ignored, got state %d", room.State)
+//	if room_worker.State != RoundOver {
+//		t.Fatalf("expected non-current player to be ignored, got state %d", room_worker.State)
 //	}
 //
-//	room.handleMessage(&ClientMessage{
+//	room_worker.handleMessage(&ClientMessage{
 //		UserId:  explainer,
 //		MsgType: StartRound,
 //		MsgData: map[string]any{},
 //	}, vocabs)
-//	if room.State != Explaining {
-//		t.Fatalf("expected current player to start round, got state %d", room.State)
+//	if room_worker.State != Explaining {
+//		t.Fatalf("expected current player to start round, got state %d", room_worker.State)
 //	}
-//	if room.ticker == nil {
+//	if room_worker.ticker == nil {
 //		t.Fatal("expected ticker to be initialized after round start")
 //	}
-//	room.ticker.Stop()
+//	room_worker.ticker.Stop()
 //}

@@ -10,7 +10,6 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/xolra0d/alias-online/internal/config"
-	"github.com/xolra0d/alias-online/internal/room"
 )
 
 // InitPool initializes PostgreSQL pool from `postgresUrl`.
@@ -80,25 +79,25 @@ func (p *Postgres) ValidateUser(ctx context.Context, credentials UserCredentials
 }
 
 // AddRoom generates seeds vocab and saves config to database.
-func (p *Postgres) AddRoom(ctx context.Context, adminId uuid.UUID, cfg room.RoomConfig) (string, error) {
+func (p *Postgres) AddRoom(ctx context.Context, adminId uuid.UUID, cfg rooms.RoomConfig) (string, error) {
 	const op = "database.AddRoom"
 
-	query := "INSERT INTO rooms (id, admin, seed, current_word_index, current_player_id, game_state, language, rude_words, additional_vocabulary, clock) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)"
+	query := "INSERT INTO room_worker (id, admin, seed, current_word_index, current_player_id, game_state, language, rude_words, additional_vocabulary, clock) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)"
 	roomId := p.secrets.GenerateRoomId()
 	seed := mrand.Int31()
 	currentWordIndex := 0
 	currentPlayerId := adminId
-	gameState := int(room.RoundOver)
+	gameState := int(rooms.RoundOver)
 	_, err := p.db.Exec(ctx, query, roomId, adminId, seed, currentWordIndex, currentPlayerId, gameState, cfg.Language, cfg.RudeWords, cfg.AdditionalVocabulary, cfg.Clock)
 	if err != nil {
-		p.logger.Error(op, "could not save new room", "err", err)
+		p.logger.Error(op, "could not save new room_worker", "err", err)
 		return "", err
 	}
 	return roomId, nil
 }
 
 // LoadRoom tries to load `Room` with its users and turn order. Sets all users to not ready.
-func (p *Postgres) LoadRoom(ctx context.Context, roomId string, vocabs *room.Vocabularies) (*room.Room, error) {
+func (p *Postgres) LoadRoom(ctx context.Context, roomId string, vocabs *rooms.Vocabularies) (*rooms2.Room, error) {
 	const op = "database.LoadRoom"
 
 	var id string
@@ -111,7 +110,7 @@ func (p *Postgres) LoadRoom(ctx context.Context, roomId string, vocabs *room.Voc
 	var rudeWords bool
 	var additionalVocabulary []string
 	var clock int
-	query := "SELECT id, admin, seed, current_word_index, current_player_id, game_state, language, rude_words, additional_vocabulary, clock FROM rooms WHERE id=$1"
+	query := "SELECT id, admin, seed, current_word_index, current_player_id, game_state, language, rude_words, additional_vocabulary, clock FROM room_worker WHERE id=$1"
 	err := p.db.QueryRow(ctx, query, roomId).Scan(
 		&id,
 		&admin,
@@ -125,7 +124,7 @@ func (p *Postgres) LoadRoom(ctx context.Context, roomId string, vocabs *room.Voc
 		&clock,
 	)
 	if err != nil {
-		p.logger.Error(op, "could not load room", "roomId", roomId, "err", err)
+		p.logger.Error(op, "could not load room_worker", "roomId", roomId, "err", err)
 		return nil, err
 	}
 
@@ -138,7 +137,7 @@ func (p *Postgres) LoadRoom(ctx context.Context, roomId string, vocabs *room.Voc
 
 	words := mrand.New(mrand.NewSource(int64(seed))).Perm(wordsTotal)
 
-	cfg := &room.RoomConfig{
+	cfg := &rooms.RoomConfig{
 		Seed:                 seed,
 		WordsPerm:            words,
 		Language:             language,
@@ -154,12 +153,12 @@ func (p *Postgres) LoadRoom(ctx context.Context, roomId string, vocabs *room.Voc
 		ORDER BY rp.turn_order ASC`
 	rows, err := p.db.Query(ctx, query, roomId)
 	if err != nil {
-		p.logger.Error(op, "failed to load room participants", "roomId", roomId, "err", err)
+		p.logger.Error(op, "failed to load room_worker participants", "roomId", roomId, "err", err)
 		return nil, err
 	}
 	defer rows.Close()
 
-	players := map[uuid.UUID]*room.Player{}
+	players := map[uuid.UUID]*rooms.Player{}
 	//goland:noinspection GoPreferNilSlice
 	turnOrder := []uuid.UUID{}
 	currentPlayer := 0
@@ -172,12 +171,12 @@ func (p *Postgres) LoadRoom(ctx context.Context, roomId string, vocabs *room.Voc
 		var name string
 		err = rows.Scan(&userId, &wordsTried, &wordsGuessed, &name)
 		if err != nil {
-			p.logger.Error(op, "failed to scan room participant", "roomId", roomId, "err", err)
+			p.logger.Error(op, "failed to scan room_worker participant", "roomId", roomId, "err", err)
 			return nil, err
 		}
 
 		id := uuid.MustParse(userId)
-		players[id] = room.NewPlayer(
+		players[id] = rooms.NewPlayer(
 			id,
 			name,
 			wordsTried,
@@ -191,15 +190,15 @@ func (p *Postgres) LoadRoom(ctx context.Context, roomId string, vocabs *room.Voc
 		i++
 	}
 
-	r := room.NewRoom(id, admin, cfg, players, turnOrder, currentPlayer, currentWordIndex, room.GameState(gameState), p.logger)
+	r := rooms.NewRoom(id, admin, cfg, players, turnOrder, currentPlayer, currentWordIndex, rooms.GameState(gameState), p.logger)
 	return r, nil
 }
 
 // LoadVocabs tries to load all vocabs from database.
-func (p *Postgres) LoadVocabs(ctx context.Context) (map[string]*room.Vocabulary, error) {
+func (p *Postgres) LoadVocabs(ctx context.Context) (map[string]*rooms.Vocabulary, error) {
 	const op = "database.LoadVocabs"
 
-	vocabs := map[string]*room.Vocabulary{}
+	vocabs := map[string]*rooms.Vocabulary{}
 	query := "SELECT language, primary_words, rude_words FROM vocabularies WHERE available = TRUE"
 	rows, err := p.db.Query(ctx, query)
 	if err != nil {
@@ -215,12 +214,12 @@ func (p *Postgres) LoadVocabs(ctx context.Context) (map[string]*room.Vocabulary,
 			p.logger.Error(op, "failed to load vocabulary", "err", err)
 			return vocabs, err
 		}
-		vocabs[language] = &room.Vocabulary{PrimaryWords: primaryWords, RudeWords: rudeWords}
+		vocabs[language] = &rooms.Vocabulary{PrimaryWords: primaryWords, RudeWords: rudeWords}
 	}
 	return vocabs, nil
 }
 
-func (p *Postgres) SaveRoomSnapshot(ctx context.Context, r *room.Room) (err error) {
+func (p *Postgres) SaveRoomSnapshot(ctx context.Context, r *rooms2.Room) (err error) {
 	const op = "database.SaveRoomSnapshot"
 
 	tx, err := p.db.Begin(ctx)
@@ -243,7 +242,7 @@ func (p *Postgres) SaveRoomSnapshot(ctx context.Context, r *room.Room) (err erro
 	}()
 
 	roomQuery := `
-		INSERT INTO rooms (id, admin, seed, current_word_index, current_player_id, game_state, language, rude_words, additional_vocabulary, clock)
+		INSERT INTO room_worker (id, admin, seed, current_word_index, current_player_id, game_state, language, rude_words, additional_vocabulary, clock)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		ON CONFLICT (id)
 		DO UPDATE SET
@@ -268,7 +267,7 @@ func (p *Postgres) SaveRoomSnapshot(ctx context.Context, r *room.Room) (err erro
 		r.Config.Clock,
 	)
 	if err != nil {
-		p.logger.Error(op, "failed to upsert room", "err", err, "roomId", r.Id)
+		p.logger.Error(op, "failed to upsert room_worker", "err", err, "roomId", r.Id)
 		return err
 	}
 
