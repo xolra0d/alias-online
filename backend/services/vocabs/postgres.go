@@ -7,20 +7,24 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func InitPool(postgresUrl string) (*pgxpool.Pool, error) {
-	return pgxpool.New(context.Background(), postgresUrl)
-}
-
 type Postgres struct {
 	db     *pgxpool.Pool
 	logger *slog.Logger
 }
 
-func NewPostgres(db *pgxpool.Pool, logger *slog.Logger) *Postgres {
+func NewPostgres(postgresUrl string, logger *slog.Logger) (*Postgres, error) {
+	db, err := pgxpool.New(context.Background(), postgresUrl)
+	if err != nil {
+		return nil, err
+	}
 	return &Postgres{
 		db:     db,
 		logger: logger,
-	}
+	}, nil
+}
+
+func (p *Postgres) Close() {
+	p.db.Close()
 }
 
 func (p *Postgres) LoadVocabs(ctx context.Context) (map[string]Vocabulary, bool) {

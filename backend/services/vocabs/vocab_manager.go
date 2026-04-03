@@ -25,26 +25,40 @@ type VocabManager struct {
 	runObservation atomic.Bool
 	stop           chan struct{}
 	done           chan struct{}
+
+	LoadVocabsTimeout time.Duration
+	PollInterval      time.Duration
 }
 
-func NewVocabManager(db *Postgres, logger *slog.Logger) *VocabManager {
-	return &VocabManager{
-		db:     db,
-		logger: logger,
-		stop:   make(chan struct{}),
-		done:   make(chan struct{}),
+func NewVocabManager(db *Postgres, logger *slog.Logger, loadVocabsTimeout, pollInterval time.Duration) (*VocabManager, bool) {
+	ctx, cancel := context.WithTimeout(context.Background(), loadVocabsTimeout)
+	vocabs, ok := db.LoadVocabs(ctx)
+	cancel()
+	if !ok {
+		return nil, false
 	}
+
+	return &VocabManager{
+		vocabs:            vocabs,
+		db:                db,
+		logger:            logger,
+		stop:              make(chan struct{}),
+		done:              make(chan struct{}),
+		LoadVocabsTimeout: loadVocabsTimeout,
+		PollInterval:      pollInterval,
+	}, true
 }
 
-func (v *VocabManager) StartObservation(loadVocabsTimeout, pollInterval time.Duration) {
+func (v *VocabManager) StartObservation() {
 	v.logger.Info("starting observation loop")
 	v.runObservation.Store(true)
 
+out:
 	for {
 		if !v.runObservation.Load() {
-			break
+			break out
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), loadVocabsTimeout)
+		ctx, cancel := context.WithTimeout(context.Background(), v.LoadVocabsTimeout)
 		vocabs, ok := v.db.LoadVocabs(ctx)
 		cancel()
 
@@ -54,6 +68,7 @@ func (v *VocabManager) StartObservation(loadVocabsTimeout, pollInterval time.Dur
 			v.lock.RUnlock()
 
 			if !eq {
+				v.logger.Info("updating vocabs")
 				v.lock.Lock()
 				v.vocabs = vocabs
 				v.lock.Unlock()
@@ -62,8 +77,8 @@ func (v *VocabManager) StartObservation(loadVocabsTimeout, pollInterval time.Dur
 
 		select {
 		case <-v.stop:
-			break
-		case <-time.After(pollInterval):
+			break out
+		case <-time.After(v.PollInterval):
 		}
 	}
 
@@ -95,6 +110,7 @@ func (v *VocabManager) StopObservation() {
 		v.stop <- struct{}{}
 		<-v.done
 	}
+	v.logger.Info("stopped observation loop")
 }
 
 func (v *VocabManager) AvailableVocabs() []string {

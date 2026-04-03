@@ -1,9 +1,13 @@
 package middleware
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 	"time"
+
+	"github.com/rs/cors"
+	"github.com/xolra0d/alias-online/shared/pkg/api"
 )
 
 type Middleware func(http.Handler) http.Handler
@@ -16,59 +20,76 @@ func Chain(h http.Handler, m ...Middleware) http.Handler {
 	return h
 }
 
-//// Auth reads `User-Id` and `User-Secret` headers and checks if user exists.
-//func Auth(logger *slog.Logger) Middleware {
-//	return func(next http.Handler) http.Handler {
-//		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-//			id := r.Header.Get("User-Id")
-//			secret := r.Header.Get("User-Secret")
-//			if id == "" || secret == "" {
-//				err := api.WriteJSON(w, http.StatusBadRequest, P{"err": "missing credentials"})
-//				if err != nil {
-//					logger.Error("could not write response", "err", err)
-//				}
-//				return
-//			}
-//			parsedId, err := uuid.Parse(id)
-//			if err != nil {
-//				err := api.WriteJSON(w, http.StatusBadRequest, P{"err": "invalid credentials"})
-//				if err != nil {
-//					h.logger.Error("could not write response", "err", err)
-//				}
-//				return
-//			}
-//			ok := h.postgres.ValidateUser(r.Context(), database.UserCredentials{Id: parsedId, Secret: secret})
-//			if !ok {
-//				err := api.WriteJSON(w, http.StatusUnauthorized, P{"err": "invalid credentials"})
-//				if err != nil {
-//					logger.Error("could not write response", "err", err)
-//				}
-//				return
-//			}
-//			next.ServeHTTP(w, r)
-//		})
-//	}
-//}
+func NewCors(allowedOrigins, allowedMethods, allowedHeaders []string, allowCredentials bool) Middleware {
+	return cors.New(cors.Options{
+		AllowedOrigins:   allowedOrigins,
+		AllowedMethods:   allowedMethods,
+		AllowedHeaders:   allowedHeaders,
+		AllowCredentials: allowCredentials,
+	}).Handler
+}
 
-//// UserIdRateLimiter limits resource usage based on `User-Id` header.
-//func (h *Handles) UserIdRateLimiter(l *RateLimiter) Middleware {
-//	return func(next http.Handler) http.Handler {
-//		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-//			id := r.Header.Get("User-Id")
-//			if id == "" {
-//				err := WriteJSON(w, http.StatusBadRequest, P{"err": "missing credentials"})
-//				if err != nil {
-//					h.logger.Error("could not write response", "err", err)
-//				}
-//				return
-//			}
-//			if !l.Allow(id) {
-//				return
-//			}
-//			next.ServeHTTP(w, r)
-//		})
-//	}
-//}
+func NewCSRF(allowedOrigins []string) Middleware {
+	base := http.NewCrossOriginProtection()
+	for _, origin := range allowedOrigins {
+		base.AddTrustedOrigin(origin)
+	}
+	return base.Handler
+}
+
+const (
+	LoginCookieName = "login_token"
+	LoginContextKey = "login"
+)
+
+// AuthJWT reads `Authorization` cookie and checks if it is valid.
+func AuthJWT(logger *slog.Logger, validate func(tokenString string) (username string, err error)) Middleware {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			cookie, err := r.Cookie(LoginCookieName)
+			if err != nil {
+				if err == http.ErrNoCookie {
+					err := api.WriteJSON(w, http.StatusUnauthorized, map[string]any{"err": "unauthorized"})
+					if err != nil {
+						logger.Error("could not write response", "err", err)
+					}
+					return
+				}
+				writeErr := api.WriteJSON(w, http.StatusBadRequest, map[string]any{"err": err})
+				if writeErr != nil {
+					logger.Error("could not write response", "err", writeErr)
+				}
+				return
+			}
+			token := cookie.Value
+			username, err := validate(token)
+			if err != nil {
+				writeErr := api.WriteJSON(w, http.StatusBadRequest, map[string]any{"err": err})
+				if writeErr != nil {
+					logger.Error("could not write response", "err", writeErr)
+				}
+				return
+			}
+
+			ctx := context.WithValue(r.Context(), LoginContextKey, username)
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
+}
+
+// RequestRateLimiter limits resource usage based on ???.
+func RequestRateLimiter(l *RateLimiter, getId func(r *http.Request) string, logger *slog.Logger) Middleware {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			id := getId(r)
+			if !l.Allow(id) {
+				logger.Info("rate limited", "id", id)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
 
 //// ReadUserIP tries to get user real IP.
 //func ReadUserIP(r *http.Request) string {
@@ -110,7 +131,7 @@ func Logging(logger *slog.Logger) Middleware {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			start := time.Now()
 			next.ServeHTTP(w, r)
-			logger.Info("got request", "method", r.Method, "path", r.URL.Path, "duration", time.Since(start))
+			logger.Info("got request", "method", r.Method, "path", r.URL.Path, "duration", time.Since(start).String())
 		})
 	}
 }

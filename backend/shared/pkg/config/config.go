@@ -37,9 +37,19 @@ func StringToSeconds(name, val string) time.Duration {
 	return time.Duration(out) * time.Second
 }
 
-// StringToUInt stringToSeconds parses `val` (unsigned num) into uint64. Uses `name` for panic.
+// StringToUInt parses `val` (unsigned num) into uint64. Uses `name` for panic.
 func StringToUInt(name, val string) uint64 {
 	out, err := strconv.ParseUint(val, 10, 64)
+	if err != nil {
+		panic(fmt.Sprintf("ENV: `%s`=%s is invalid: %s!", name, val, err))
+	}
+
+	return out
+}
+
+// StringToBool parses `val` into bool. Uses `name` for panic.
+func StringToBool(name, val string) bool {
+	out, err := strconv.ParseBool(val)
 	if err != nil {
 		panic(fmt.Sprintf("ENV: `%s`=%s is invalid: %s!", name, val, err))
 	}

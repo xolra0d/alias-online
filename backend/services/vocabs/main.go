@@ -3,8 +3,10 @@ package main
 import (
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/xolra0d/alias-online/shared/pkg/logger"
+	"github.com/xolra0d/alias-online/shared/pkg/middleware"
 )
 
 func main() {
@@ -13,16 +15,18 @@ func main() {
 	cfg := LoadServerConfig()
 	l := slog.New(logger.NewHandler(nil))
 
-	pgPool, err := InitPool(cfg.PostgresUrl)
+	postgres, err := NewPostgres(cfg.PostgresUrl, l)
 	if err != nil {
 		l.Error("failed to connect to database", "op", op, "error", err)
 		return
 	}
-	defer pgPool.Close()
-
-	postgres := NewPostgres(pgPool, l)
-	vocabs := NewVocabManager(postgres, l)
-	go vocabs.StartObservation(cfg.LoadVocabsTimeout, cfg.PollInterval)
+	defer postgres.Close()
+	vocabs, ok := NewVocabManager(postgres, l, cfg.LoadVocabsTimeout, cfg.PollInterval)
+	if !ok {
+		l.Error("failed to initiate vocab manager", "op", op, "error", err)
+		return
+	}
+	go vocabs.StartObservation()
 
 	handles := NewHTTPHandles(vocabs, l)
 
@@ -31,6 +35,13 @@ func main() {
 	mux.HandleFunc("GET /api/available-vocabs", handles.AvailableVocabs)
 	mux.HandleFunc("GET /api/vocab", handles.Vocab)
 
-	RunServer(mux, l, cfg.RunningAddr, cfg.ShutdownTimeout)
+	cors := middleware.NewCors(
+		strings.Split(cfg.AllowedOrigins, ","),
+		[]string{"GET", "OPTIONS"},
+		[]string{"Origin", "Content-Length", "Content-Type"},
+		true,
+	)
+
+	RunServer(mux, cors, l, cfg.RunningAddr, cfg.ShutdownTimeout)
 	vocabs.StopObservation()
 }
