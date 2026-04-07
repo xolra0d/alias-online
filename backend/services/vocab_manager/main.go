@@ -20,29 +20,18 @@ func main() {
 	}
 	defer postgres.Close()
 
-	l.Info("initializing secrets")
-	secrets, err := NewSecrets(
-		l,
-		cfg.Argon2idTime,
-		cfg.Argon2idMemory,
-		cfg.Argon2idThreads,
-		cfg.Argon2idOutLen,
-		cfg.RSAPrivateKeyFilename,
-	)
-	if err != nil {
-		l.Error("failed to start secrets", "error", err)
+	l.Info("initializing vocabularies manager")
+	vocabs, ok := NewVocabManager(postgres, l, cfg.LoadVocabsTimeout, cfg.PollInterval, cfg.ClosePostgresConnTimeout)
+	if !ok {
+		l.Error("failed to initiate vocabularies manager", "error", err)
 		return
 	}
 
+	l.Info("starting vocabularies search")
+	go vocabs.StartObservation()
+
 	l.Info("starting server")
-	RunGrpcServer(
-		secrets,
-		postgres,
-		l,
-		cfg.AddAccountTimeout,
-		cfg.FindAccountTimeout,
-		cfg.JWTCookieTimeout,
-		cfg.RunningAddr,
-		cfg.ShutdownTimeout,
-	)
+	RunGrpcServer(vocabs, l, cfg.RunningAddr, cfg.ShutdownTimeout)
+	l.Info("stopping vocabularies search")
+	vocabs.StopObservation()
 }

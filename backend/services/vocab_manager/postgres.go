@@ -34,7 +34,7 @@ func (p *Postgres) LoadVocabs(ctx context.Context) (map[string]Vocabulary, bool)
 	query := "SELECT language, primary_words, rude_words FROM vocabularies WHERE available = TRUE ORDER BY language"
 	rows, err := p.db.Query(ctx, query)
 	if err != nil {
-		p.logger.Error("failed to load vocabs", "op", op, "err", err)
+		p.logger.Error("failed to load available languages", "op", op, "err", err)
 		return vocabs, false
 	}
 	defer rows.Close()

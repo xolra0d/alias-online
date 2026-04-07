@@ -1,9 +1,9 @@
 CREATE TABLE IF NOT EXISTS rooms (
 	id TEXT PRIMARY KEY,
-	admin UUID NOT NULL references users(id),
+	admin TEXT NOT NULL references users(login),
 	seed INT NOT NULL,
 	current_word_index INT NOT NULL DEFAULT 0,
-	current_player_id UUID NOT NULL REFERENCES users(id),
+	current_player_login TEXT NOT NULL REFERENCES users(login),
 	game_state INT DEFAULT 0,
 	language TEXT NOT NULL references vocabularies(language),
 	rude_words boolean NOT NULL,

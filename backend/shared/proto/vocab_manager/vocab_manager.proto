@@ -1,0 +1,30 @@
+syntax = "proto3";
+
+package vocab_manager;
+
+option go_package = "github.com/xolra0d/alias-online/shared/proto";
+
+import "google/protobuf/empty.proto";
+
+service VocabManagerService {
+  rpc Ping(google.protobuf.Empty) returns (PingResponse);
+  rpc GetAvailableVocabs(google.protobuf.Empty) returns (GetAvailableVocabsResponse);
+  rpc GetVocab(GetVocabRequest) returns (GetVocabResponse);
+}
+
+message PingResponse {
+  bool ok = 1;
+}
+
+message GetAvailableVocabsResponse {
+  repeated string names = 1;
+}
+
+message GetVocabRequest {
+  string name = 1;
+}
+
+message GetVocabResponse {
+  repeated string primary_words = 1;
+  repeated string rude_words = 2;
+}

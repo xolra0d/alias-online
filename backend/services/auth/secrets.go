@@ -6,7 +6,6 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/pem"
-	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -70,117 +69,123 @@ func NewSecrets(
 	}, nil
 }
 
+const (
+	hashArgon2idName = "argon2id"
+	hashTimeKey      = "t"
+	hashMemoryKey    = "m"
+	hashProcessesKey = "p"
+	hashLengthKey    = "l"
+)
+
 // hashSecret hashes any password with random salt and returns result in phcformat string.
 // More: https://github.com/P-H-C/phc-string-format/blob/master/phc-sf-spec.md
 func (s *Secrets) hashSecret(secret string) string {
 	salt := s.GenerateSecretBase32()
-	output := argon2.IDKey([]byte(secret), []byte(salt), s.argon2idTime, s.argon2idMemory, s.argon2idThreads, s.argon2idOutLen)
+	hashed := argon2.IDKey([]byte(secret), []byte(salt), s.argon2idTime, s.argon2idMemory, s.argon2idThreads, s.argon2idOutLen)
 
 	newParam := func(k string, v uint) encode.KV[encode.String, encode.Byte, encode.Uint] {
 		return encode.NewKV(encode.NewByte('='), encode.NewString(k), encode.NewUint(v))
 	}
 
 	out := string(phcformat.Append(nil,
-		encode.String("argon2id"),
+		encode.String(hashArgon2idName),
 		option.Value(encode.NewUint(uint(argon2.Version))),
 		option.Value(encode.NewList(
 			encode.NewByte(','),
-			newParam("t", uint(s.argon2idTime)),
-			newParam("m", uint(s.argon2idMemory)),
-			newParam("p", uint(s.argon2idThreads)),
-			newParam("l", uint(s.argon2idOutLen)),
+			newParam(hashTimeKey, uint(s.argon2idTime)),
+			newParam(hashMemoryKey, uint(s.argon2idMemory)),
+			newParam(hashProcessesKey, uint(s.argon2idThreads)),
+			newParam(hashLengthKey, uint(s.argon2idOutLen)),
 		)),
 		option.Value(encode.NewBase64(salt)),
-		option.Value(encode.NewBase64(output)),
+		option.Value(encode.NewBase64(hashed)),
 	))
 
 	return out
 }
 
 // verifyArgon2id checks that secret is the same as encoded one in phcformat hash.
-func (s *Secrets) verifyArgon2id(secret string, hash phcformat.Hash) bool {
+func (s *Secrets) verifyArgon2id(secret string, hash phcformat.Hash) *Error {
 	const op = "database.verifyArgon2id"
 
 	paramsStr, ok := hash.Params.Unwrap()
 	if !ok {
-		s.logger.Error(op, "params for hashing algorithm are not set", "hash", hash.String())
-		return false
+		s.logger.Error("params for hashing algorithm are not set", "op", op, "hash", hash.String())
+		return NewError(ErrInternal, fmt.Errorf("params for hashing algorithm are not set"))
 	}
-	params := make(map[string]uint32)
+	params := make(map[string]uint32, 4)
 	for part := range strings.SplitSeq(paramsStr, ",") {
 		kv := strings.SplitN(part, "=", 2)
 		if len(kv) != 2 {
-			s.logger.Error(op, "params for hashing algorithm are not in key-value", "hash", hash.String())
-			return false
+			s.logger.Error("params for hashing algorithm are not in key-value format", "op", op, "hash", hash.String())
+			return NewError(ErrInternal, fmt.Errorf("params for hashing algorithm are not in key-value format"))
 		}
 
 		v, err := strconv.ParseUint(kv[1], 10, 32)
 		if err != nil {
-			s.logger.Error(op, "could not parse params for hashing algorithm", "hash", hash.String(), "name", kv[0], "val", kv[1])
-			return false
+			s.logger.Error("could not parse params for hashing algorithm", "op", op, "hash", hash.String(), "name", kv[0], "val", kv[1])
+			return NewError(ErrInternal, fmt.Errorf("could not parse params for hashing algorithm"))
 		}
 		params[kv[0]] = uint32(v)
 	}
 
-	t, ok := params["t"]
-	if !ok {
-		s.logger.Error(op, "time is not set", "hash", hash.String())
-		return false
+	if !hasKeys(params, hashTimeKey, hashMemoryKey, hashProcessesKey, hashLengthKey) {
+		s.logger.Error("missing one or more of critical params for hashing algorithm", "op", op, "hash", hash.String(), "params", params)
+		return NewError(ErrInternal, fmt.Errorf("missing one or more of critical params for hashing algorithm"))
 	}
-	m, ok := params["m"]
-	if !ok {
-		s.logger.Error(op, "memory is not set", "hash", hash.String())
-		return false
-	}
-	p, ok := params["p"]
-	if !ok {
-		s.logger.Error(op, "processors is not set", "hash", hash.String())
-		return false
-	}
-	l, ok := params["l"]
-	if !ok {
-		s.logger.Error(op, "length is not set", "hash", hash.String())
-		return false
-	}
+	t := params[hashTimeKey]
+	m := params[hashMemoryKey]
+	p := params[hashProcessesKey]
+	l := params[hashLengthKey]
+
 	salt, ok := hash.Salt.Unwrap()
 	if !ok {
-		s.logger.Error(op, "salt is not set", "hash", hash.String())
-		return false
+		s.logger.Error("salt is missing", "op", op, "hash", hash.String())
+		return NewError(ErrInternal, fmt.Errorf("salt is missing"))
 	}
 	saltDecoded, err := base64.RawStdEncoding.DecodeString(salt)
 	if err != nil {
-		s.logger.Error(op, "salt decode error", "hash", hash.String(), "err", err)
-		return false
+		s.logger.Error("salt decode error", "op", op, "hash", hash.String(), "err", err)
+		return NewError(ErrInternal, fmt.Errorf("salt decode error"))
 	}
 	expected, ok := hash.Output.Unwrap()
 	if !ok {
-		s.logger.Error(op, "output is not set", "hash", hash.String(), "err", err)
-		return false
+		s.logger.Error("output is missing", "op", op, "hash", hash.String(), "err", err)
+		return NewError(ErrInternal, fmt.Errorf("output is missing"))
 	}
 	received := argon2.IDKey([]byte(secret), saltDecoded, t, m, uint8(p), l)
 
 	if expected != base64.RawStdEncoding.EncodeToString(received) {
-		return false
+		return NewError(ErrWrongCredentials, fmt.Errorf("wrong credentials"))
+	}
+	return nil
+}
+
+func hasKeys(a map[string]uint32, keys ...string) bool {
+	for _, k := range keys {
+		if _, ok := a[k]; !ok {
+			return false
+		}
 	}
 	return true
 }
 
 // VerifyPassword checks if secret is equal to hash's secret.
-func (s *Secrets) VerifyPassword(secret, hash string) bool {
+func (s *Secrets) VerifyPassword(secret, hash string) *Error {
 	const op = "database.VerifyPassword"
 
 	h, ok := phcformat.Parse(hash)
 	if !ok {
-		s.logger.Error(op, "Could not decode phcformat hash", "hash", hash)
-		return false
+		s.logger.Error("could not decode phcformat hash", "hash", hash, "op", op)
+		return NewError(ErrInternal, fmt.Errorf("could not decode phcformat hash: %s", hash))
 	}
 
 	switch h.ID {
-	case "argon2id":
+	case hashArgon2idName:
 		return s.verifyArgon2id(secret, h)
 	default:
-		s.logger.Warn(op, "Invalid hash ID", "hash", hash)
-		return false
+		s.logger.Error(op, "Invalid hash ID", "hash", hash)
+		return NewError(ErrInternal, fmt.Errorf("invalid hash ID: %s", hash))
 	}
 }
 
@@ -189,94 +194,77 @@ func (s *Secrets) GenerateSecretBase32() string {
 	return crand.Text()
 }
 
-type Credentials struct {
-	Name     *string `json:"name"`
-	Login    string  `json:"login"`
-	Password string  `json:"password"`
-}
-
-func (c *Credentials) ValidateForRegister() error {
-	if c.Name == nil {
-		return errors.New("missing name")
+func ValidateName(name string) error {
+	if len(name) < 8 || len(name) > 20 {
+		return fmt.Errorf("invalid name")
 	}
-	if len(*c.Name) == 0 || len(*c.Name) > 20 {
-		return fmt.Errorf("empty name")
-	}
-	if len(c.Login) < 8 || len(c.Login) > 20 { // todo: maybe check for eng + nums + `_` + few special only..
-		return fmt.Errorf("invalid login")
-	}
-	if len(c.Password) < 8 || len(c.Password) > 20 {
-		return fmt.Errorf("invalid password")
-	}
-
 	return nil
 }
 
-func (c *Credentials) ValidateForLogin() error {
-	if len(c.Login) < 8 || len(c.Login) > 20 { // todo: maybe check for eng + nums + `_` + few special only..
+func ValidateLogin(login string) error {
+	if len(login) < 8 || len(login) > 20 {
 		return fmt.Errorf("invalid login")
 	}
-	if len(c.Password) < 8 || len(c.Password) > 20 {
-		return fmt.Errorf("invalid password")
-	}
-
 	return nil
 }
 
-var (
-	ErrUnAuthorized = fmt.Errorf("unauthorized")
-)
+func ValidatePassword(password string) error {
+	if len(password) < 8 || len(password) > 20 {
+		return fmt.Errorf("invalid password")
+	}
+	return nil
+}
 
+func ValidateForRegister(name, login, password string) error {
+	if err := ValidateName(name); err != nil {
+		return err
+	}
+	if err := ValidateLogin(login); err != nil {
+		return err
+	}
+	if err := ValidatePassword(password); err != nil {
+		return err
+	}
+	return nil
+}
+
+func ValidateForLogin(login, password string) error {
+	if err := ValidateLogin(login); err != nil {
+		return err
+	}
+	if err := ValidatePassword(password); err != nil {
+		return err
+	}
+	return nil
+}
+
+// NewJWT Issues new JWT token.
 func (s *Secrets) NewJWT(login string, exp time.Time) (string, error) {
-	token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
+	claims := jwt.MapClaims{
 		"sub": login,
 		"iat": time.Now().Unix(),
 		"exp": exp.Unix(),
-	})
-
-	return token.SignedString(s.privateKey)
-}
-
-func (s *Secrets) ValidateJWT(tokenString string) (username string, err error) {
-	token, err := jwt.Parse(tokenString, func(t *jwt.Token) (any, error) {
-		if _, ok := t.Method.(*jwt.SigningMethodRSA); !ok {
-			s.logger.Error("unexpected signing method", "err", t.Header["alg"])
-			return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
-		}
-		return &s.privateKey.PublicKey, nil
-	})
-	if err != nil || token == nil || !token.Valid {
-		s.logger.Warn("invalid token", "err", err, "token", tokenString)
-		return "", err
 	}
+	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
 
-	claims, ok := token.Claims.(jwt.MapClaims)
-	if !ok {
-		return "", ErrUnAuthorized
-	}
-
-	sub, ok := claims["sub"].(string)
-	if !ok || sub == "" {
-		return "", ErrUnAuthorized
-	}
-
-	exp, ok := claims["exp"].(float64)
-	if !ok || exp == 0 || int64(exp) < time.Now().Unix() {
-		return "", ErrUnAuthorized
-	}
-
-	return sub, nil
-}
-
-func (s *Secrets) EncodeJWTPublicKey() (string, error) {
-	pubDER, err := x509.MarshalPKIXPublicKey(&s.privateKey.PublicKey)
+	t, err := token.SignedString(s.privateKey)
 	if err != nil {
-		return "", fmt.Errorf("failed to marshal public key: %w", err)
+		s.logger.Error("error signing token", "claims", claims, "err", err)
+		return "", fmt.Errorf("jwt error")
 	}
-	block := &pem.Block{
-		Type:  "PUBLIC KEY",
-		Bytes: pubDER,
-	}
-
-	return string(pem.EncodeToMemory(block)), nil
+	return t, nil
 }
+
+//// EncodeJWTPublicKey encodes public JWT token to share with other services.
+//func (s *Secrets) EncodeJWTPublicKey() (string, error) {
+//	pubDER, err := x509.MarshalPKIXPublicKey(&s.privateKey.PublicKey)
+//	if err != nil {
+//		return "", fmt.Errorf("failed to marshal public key: %w", err)
+//	}
+//	block := &pem.Block{
+//		Type:  "PUBLIC KEY",
+//		Bytes: pubDER,
+//	}
+//
+//	return string(pem.EncodeToMemory(block)), nil
+//}

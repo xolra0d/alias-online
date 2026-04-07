@@ -1,0 +1,56 @@
+syntax = "proto3";
+
+package room_manager;
+
+option go_package = "github.com/xolra0d/alias-online/shared/proto";
+
+import "google/protobuf/empty.proto";
+
+service RoomManagerService {
+  rpc Ping(google.protobuf.Empty) returns (PingResponse);
+
+  // for main service.
+  rpc GetRoomWorker(GetRoomWorkerRequest) returns (GetRoomWorkerResponse);
+
+  // for workers.
+  rpc PingWorker(PingWorkerRequest) returns (google.protobuf.Empty);
+  rpc RegisterRoom(RegisterRoomRequest) returns (RegisterRoomResponse);
+  rpc ProlongRoom(ProlongRoomRequest) returns (google.protobuf.Empty);
+  rpc ReleaseRoom(ReleaseRoomRequest) returns (google.protobuf.Empty);
+}
+
+message PingResponse {
+  bool ok = 1;
+}
+
+message PingWorkerRequest {
+  string worker = 1;
+  repeated string loaded_rooms = 2;
+}
+
+message GetRoomWorkerRequest {
+  string room_id = 1;
+}
+
+message GetRoomWorkerResponse {
+  string worker = 1;
+}
+
+message RegisterRoomRequest {
+  string room_id = 1;
+  string worker = 2;
+}
+
+message RegisterRoomResponse {
+  string worker = 1;
+}
+
+message ProlongRoomRequest {
+  string room_id = 1;
+  string worker = 2;
+}
+
+message ReleaseRoomRequest {
+  string room_id = 1;
+  string worker = 2;
+}

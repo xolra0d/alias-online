@@ -2,56 +2,145 @@ package main
 
 import (
 	"context"
-	"errors"
 	"log/slog"
-	"net/http"
+	"net"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
 	"github.com/xolra0d/alias-online/shared/pkg/middleware"
+	pb "github.com/xolra0d/alias-online/shared/proto/auth"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/emptypb"
 )
 
-func RunServer(mux *http.ServeMux, csrf, cors middleware.Middleware, logger *slog.Logger, runningAddr string, shutdownTimeout time.Duration) {
-	const op = "main.RunServer"
-
-	server := &http.Server{
-		Addr: runningAddr,
-		Handler: middleware.Chain(
-			mux,
-			csrf,
-			cors,
-			middleware.Logging(logger),
-		),
+func RunGrpcServer(secrets *Secrets, postgres *Postgres, logger *slog.Logger, addAccountTimeout, findAccountTimeout, jwtCookieTimeout time.Duration, runningAddr string, shutdownTimeout time.Duration) {
+	lis, err := net.Listen("tcp", runningAddr)
+	if err != nil {
+		logger.Error("failed to listen", "addr", runningAddr, "err", err)
+		os.Exit(1)
 	}
+	s := grpc.NewServer(
+		grpc.ChainUnaryInterceptor(
+			middleware.LoggingUnaryInterceptor(logger),
+		),
+	)
+	pb.RegisterAuthServiceServer(s, &server{
+		secrets:  secrets,
+		postgres: postgres,
+		logger:   logger,
+
+		AddAccountTimeout:  addAccountTimeout,
+		FindAccountTimeout: findAccountTimeout,
+		JWTCookieTimeout:   jwtCookieTimeout,
+	})
+
+	shutdown := make(chan os.Signal, 1)
 
 	go func() {
-		logger.Info("starting HTTP server", "addr", runningAddr)
-		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			logger.Error("listen error", "err", err)
+		logger.Info("starting GRPC server", "addr", runningAddr)
+		if err := s.Serve(lis); err != nil {
+			logger.Error("failed to serve: %v", err)
 		}
 	}()
 
-	shutdown := make(chan os.Signal, 1)
 	signal.Notify(shutdown, syscall.SIGINT, syscall.SIGTERM)
 
 	<-shutdown
 	logger.Info("shutdown initiated")
 
-	ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
-	defer cancel()
+	go func() {
+		time.Sleep(shutdownTimeout)
+		logger.Warn("timeout shutting down")
+		os.Exit(1)
+	}()
 
-	if err := server.Shutdown(ctx); err != nil {
-		logger.Error("shutdown failed", "op", op, "err", err)
-	}
-
-	logger.Info("HTTP server stopped")
+	s.GracefulStop()
+	logger.Info("GRPC server stopped")
 }
 
-func IPRateLimiter(limit int, window time.Duration, cleanupEvery int, logger *slog.Logger) middleware.Middleware {
-	limiter := middleware.NewRateLimiter(limit, window, cleanupEvery)
-	return middleware.RequestRateLimiter(limiter, func(r *http.Request) string {
-		return ""
-	}, logger)
+type server struct {
+	pb.UnimplementedAuthServiceServer
+	secrets  *Secrets
+	postgres *Postgres
+	logger   *slog.Logger
+
+	AddAccountTimeout  time.Duration
+	FindAccountTimeout time.Duration
+	JWTCookieTimeout   time.Duration
+}
+
+func (s *server) Ping(_ context.Context, _ *emptypb.Empty) (*pb.PingResponse, error) {
+	return &pb.PingResponse{Ok: true}, nil
+}
+
+func (s *server) Register(ctx context.Context, req *pb.RegisterRequest) (*pb.RegisterResponse, error) {
+	if err := ValidateForRegister(req.Name, req.Login, req.Password); err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+
+	hashed := s.secrets.hashSecret(req.Password)
+	ctx, cancel := context.WithTimeout(ctx, s.AddAccountTimeout)
+	err := s.postgres.AddAccount(ctx, req.Name, req.Login, hashed)
+	cancel()
+	if err != nil {
+		switch err.SvcError {
+		case ErrUserAlreadyExists:
+			return nil, status.Error(codes.AlreadyExists, "user already exists")
+		case ErrInternal:
+			return nil, status.Error(codes.Internal, "internal server error")
+		default:
+			return nil, status.Error(codes.Unknown, "unknown error")
+		}
+	}
+
+	exp := time.Now().Add(s.JWTCookieTimeout)
+	token, err2 := s.secrets.NewJWT(req.Login, exp)
+	if err2 != nil {
+		return nil, status.Error(codes.Internal, err2.Error())
+	}
+
+	return &pb.RegisterResponse{Token: token, Exp: exp.Unix()}, nil
+}
+
+func (s *server) Login(ctx context.Context, req *pb.LoginRequest) (*pb.LoginResponse, error) {
+	if err := ValidateForLogin(req.Login, req.Password); err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, s.AddAccountTimeout)
+	hashed, err := s.postgres.FindAccount(ctx, req.Login)
+	cancel()
+	if err != nil {
+		switch err.SvcError {
+		case ErrUserNotFound:
+			return nil, status.Error(codes.NotFound, "user not found")
+		case ErrInternal:
+			return nil, status.Error(codes.Internal, "internal server error")
+		default:
+			return nil, status.Error(codes.Unknown, "unknown error")
+		}
+	}
+	err = s.secrets.VerifyPassword(req.Password, hashed)
+	if err != nil {
+		switch err.SvcError {
+		case ErrWrongCredentials:
+			return nil, status.Error(codes.Unauthenticated, "wrong credentials")
+		case ErrInternal:
+			return nil, status.Error(codes.Internal, "internal server error")
+		default:
+			return nil, status.Error(codes.Unknown, "unknown error")
+		}
+	}
+
+	exp := time.Now().Add(s.JWTCookieTimeout)
+	token, err2 := s.secrets.NewJWT(req.Login, exp)
+	if err2 != nil {
+		return nil, status.Error(codes.Internal, err2.Error())
+	}
+
+	return &pb.LoginResponse{Token: token, Exp: exp.Unix()}, nil
 }

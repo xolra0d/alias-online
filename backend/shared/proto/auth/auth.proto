@@ -1,0 +1,38 @@
+syntax = "proto3";
+
+package auth;
+
+option go_package = "github.com/xolra0d/alias-online/shared/proto";
+
+import "google/protobuf/empty.proto";
+
+service AuthService {
+  rpc Ping(google.protobuf.Empty) returns (PingResponse);
+  rpc Register(RegisterRequest) returns (RegisterResponse);
+  rpc Login(LoginRequest) returns (LoginResponse);
+}
+
+message PingResponse {
+  bool ok = 1;
+}
+
+message RegisterRequest {
+  string name = 1;
+  string login = 2;
+  string password = 3;
+}
+
+message RegisterResponse {
+  string token = 1;
+  int64 exp = 2;
+}
+
+message LoginRequest {
+  string login = 1;
+  string password = 2;
+}
+
+message LoginResponse {
+  string token = 1;
+  int64 exp = 2;
+}

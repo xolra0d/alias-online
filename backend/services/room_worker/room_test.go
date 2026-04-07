@@ -1,4 +1,4 @@
-package room_worker
+package main
 
 //
 //import (
@@ -33,7 +33,7 @@ package room_worker
 //		logger:           DummyPrefixLogger(),
 //	}
 //
-//	vocabs := &Vocabularies{
+//	vocab_manager := &Vocabularies{
 //		vocabulary: map[string]*Vocabulary{
 //			"English": {
 //				PrimaryWords: []string{"cat", "dog"},
@@ -41,17 +41,17 @@ package room_worker
 //		},
 //	}
 //
-//	return room_worker, vocabs, explainer, guesser
+//	return room_worker, vocab_manager, explainer, guesser
 //}
 //
 //func TestHandleMessageTryGuessIncrementsScore(t *testing.T) {
-//	room_worker, vocabs, explainer, guesser := newRoomForMessageTests()
+//	room_worker, vocab_manager, explainer, guesser := newRoomForMessageTests()
 //
 //	room_worker.handleMessage(&ClientMessage{
 //		UserId:  guesser,
 //		MsgType: TryGuess,
 //		MsgData: map[string]any{"guess": "cat"},
-//	}, vocabs)
+//	}, vocab_manager)
 //
 //	if room_worker.Players[explainer].WordsGuessed != 1 {
 //		t.Fatalf("expected explainer guessed score to be 1, got %d", room_worker.Players[explainer].WordsGuessed)
@@ -65,18 +65,18 @@ package room_worker
 //}
 //
 //func TestHandleMessageGetWordCountsTriedOncePerWord(t *testing.T) {
-//	room_worker, vocabs, explainer, _ := newRoomForMessageTests()
+//	room_worker, vocab_manager, explainer, _ := newRoomForMessageTests()
 //
 //	room_worker.handleMessage(&ClientMessage{
 //		UserId:  explainer,
 //		MsgType: GetWord,
 //		MsgData: map[string]any{},
-//	}, vocabs)
+//	}, vocab_manager)
 //	room_worker.handleMessage(&ClientMessage{
 //		UserId:  explainer,
 //		MsgType: GetWord,
 //		MsgData: map[string]any{},
-//	}, vocabs)
+//	}, vocab_manager)
 //
 //	if room_worker.Players[explainer].WordsTried != 1 {
 //		t.Fatalf("expected words tried to increase once for same word, got %d", room_worker.Players[explainer].WordsTried)
@@ -84,14 +84,14 @@ package room_worker
 //}
 //
 //func TestHandleMessageStartRoundOnlyCurrentPlayer(t *testing.T) {
-//	room_worker, vocabs, explainer, guesser := newRoomForMessageTests()
+//	room_worker, vocab_manager, explainer, guesser := newRoomForMessageTests()
 //	room_worker.State = RoundOver
 //
 //	room_worker.handleMessage(&ClientMessage{
 //		UserId:  guesser,
 //		MsgType: StartRound,
 //		MsgData: map[string]any{},
-//	}, vocabs)
+//	}, vocab_manager)
 //	if room_worker.State != RoundOver {
 //		t.Fatalf("expected non-current player to be ignored, got state %d", room_worker.State)
 //	}
@@ -100,7 +100,7 @@ package room_worker
 //		UserId:  explainer,
 //		MsgType: StartRound,
 //		MsgData: map[string]any{},
-//	}, vocabs)
+//	}, vocab_manager)
 //	if room_worker.State != Explaining {
 //		t.Fatalf("expected current player to start round, got state %d", room_worker.State)
 //	}

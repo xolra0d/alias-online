@@ -8,6 +8,7 @@ import (
 
 	"github.com/rs/cors"
 	"github.com/xolra0d/alias-online/shared/pkg/api"
+	"google.golang.org/grpc"
 )
 
 type Middleware func(http.Handler) http.Handler
@@ -124,14 +125,49 @@ func RequestRateLimiter(l *RateLimiter, getId func(r *http.Request) string, logg
 //	}
 //}
 
-// Logging Logs each request.
+// Logging Logs http each request.
 func Logging(logger *slog.Logger) Middleware {
-	const op = "transport.Logging"
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			start := time.Now()
 			next.ServeHTTP(w, r)
 			logger.Info("got request", "method", r.Method, "path", r.URL.Path, "duration", time.Since(start).String())
 		})
+	}
+}
+
+func LoggingUnaryInterceptor(logger *slog.Logger) grpc.UnaryServerInterceptor {
+	return func(
+		ctx context.Context,
+		req any,
+		info *grpc.UnaryServerInfo,
+		handler grpc.UnaryHandler,
+	) (any, error) {
+		start := time.Now()
+		resp, err := handler(ctx, req)
+		logger.Info("got request",
+			"method", info.FullMethod,
+			"duration", time.Since(start).String(),
+			"error", err,
+		)
+		return resp, err
+	}
+}
+
+func LoggingStreamInterceptor(logger *slog.Logger) grpc.StreamServerInterceptor {
+	return func(
+		srv any,
+		ss grpc.ServerStream,
+		info *grpc.StreamServerInfo,
+		handler grpc.StreamHandler,
+	) error {
+		start := time.Now()
+		err := handler(srv, ss)
+		logger.Info("got stream",
+			"method", info.FullMethod,
+			"duration", time.Since(start).String(),
+			"error", err,
+		)
+		return err
 	}
 }
