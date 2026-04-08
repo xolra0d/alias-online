@@ -42,6 +42,7 @@ func RunGrpcServer(vocabManager *VocabManager, logger *slog.Logger, runningAddr 
 	<-shutdown
 	logger.Info("shutdown initiated")
 
+	// grpc does not have ctx-aware stop
 	go func() {
 		time.Sleep(shutdownTimeout)
 		logger.Warn("timeout shutting down")
@@ -66,6 +67,6 @@ func (s *server) GetAvailableVocabs(_ context.Context, _ *emptypb.Empty) (*pb.Ge
 }
 
 func (s *server) GetVocab(_ context.Context, req *pb.GetVocabRequest) (*pb.GetVocabResponse, error) {
-	primary, rude := s.vocabs.Vocab(req.Name)
-	return &pb.GetVocabResponse{PrimaryWords: primary, RudeWords: rude}, nil
+	vocab := s.vocabs.Vocab(req.Name)
+	return &pb.GetVocabResponse{PrimaryWords: vocab.PrimaryWords, RudeWords: vocab.RudeWords}, nil
 }

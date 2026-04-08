@@ -18,6 +18,7 @@ type Secrets struct {
 	logger *slog.Logger
 }
 
+// loads rsa public key from path.
 func loadPublicKey(path string) (*rsa.PublicKey, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -35,6 +36,7 @@ func loadPublicKey(path string) (*rsa.PublicKey, error) {
 	return key, nil
 }
 
+// NewSecrets creates new secrets manager.
 func NewSecrets(jwtPublicTokenPath string, logger *slog.Logger) (*Secrets, error) {
 	publicKey, err := loadPublicKey(jwtPublicTokenPath)
 	if err != nil {
@@ -46,7 +48,8 @@ func NewSecrets(jwtPublicTokenPath string, logger *slog.Logger) (*Secrets, error
 	}, nil
 }
 
-func (s *Secrets) CheckJwtToken(tokenString string) (string, error) {
+// CheckJwt validates jwt to be valid. returns username or error.
+func (s *Secrets) CheckJwt(tokenString string) (string, error) {
 	var ErrUnAuthorized = fmt.Errorf("unauthorized")
 
 	token, err := jwt.Parse(tokenString, func(t *jwt.Token) (any, error) {
@@ -54,7 +57,7 @@ func (s *Secrets) CheckJwtToken(tokenString string) (string, error) {
 			s.logger.Error("unexpected signing method", "err", t.Header["alg"])
 			return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
 		}
-		return &s.jwtPublicToken, nil
+		return s.jwtPublicToken, nil
 	})
 	if err != nil || token == nil || !token.Valid {
 		s.logger.Warn("invalid token", "err", err, "token", tokenString)

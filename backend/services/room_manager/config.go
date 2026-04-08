@@ -7,9 +7,7 @@ import (
 )
 
 type ServerConfig struct {
-
 	// HTTP
-	AllowedOrigins  string        // Env name: `ALLOWED_ORIGINS`. Origins to respond to (e.g., http://website.com:12), separated by comma. Default: none, will exit, if not set.
 	RunningAddr     string        // Env name: `RUNNING_ADDR`. Address to run web on. Default: `:8060`.
 	ShutdownTimeout time.Duration // Env name: `SHUTDOWN_TIMEOUT`. Time for transport server to shut down in seconds. Default: 10.
 
@@ -18,17 +16,14 @@ type ServerConfig struct {
 	WorkerExpiry                 time.Duration // Env name: `WORKER_EXPIRY`. Wait time before worker expires in seconds. Default: 30.
 	RetrieveActiveWorkersTimeout time.Duration
 
-	// Redis
+	// DATABASE
 	RedisAddr     string // Env name: `REDIS_ADDR`. Redis server address. Default: `localhost:6379`.
 	RedisUsername string // Env name: `REDIS_USERNAME`. Redis auth username. Default: "".
 	RedisPassword string // Env name: `REDIS_PASSWORD`. Redis auth password. Default: ".
 	RedisDB       int    // Env name: `REDIS_DB`. Redis database index. Default: 0.
-
 }
 
 func LoadServerConfig() *ServerConfig {
-
-	allowedOrigins := config.GetEnvOrExit("ALLOWED_ORIGINS")
 	runningAddr := config.GetEnvOrFallback("RUNNING_ADDR", ":8060")
 	shutdownTimeout := config.StringToSeconds("SHUTDOWN_TIMEOUT", config.GetEnvOrFallback("SHUTDOWN_TIMEOUT", "10"))
 
@@ -42,7 +37,6 @@ func LoadServerConfig() *ServerConfig {
 	redisDB := config.StringToUInt("REDIS_DB", config.GetEnvOrFallback("REDIS_DB", "0"))
 
 	return &ServerConfig{
-		AllowedOrigins:  allowedOrigins,
 		RunningAddr:     runningAddr,
 		ShutdownTimeout: shutdownTimeout,
 

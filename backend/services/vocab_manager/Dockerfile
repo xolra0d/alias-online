@@ -6,9 +6,11 @@ COPY go.work ./
 COPY shared ./shared
 COPY services/main ./services/main
 COPY services/auth ./services/auth
-COPY services/vocabs ./services/vocabs
+COPY services/room_manager ./services/room_manager
+COPY services/room_worker ./services/room_worker
+COPY services/vocab_manager ./services/vocab_manager
 
-WORKDIR /workspace/services/vocabs
+WORKDIR /workspace/services/vocab_manager
 RUN go mod download
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
     go build -ldflags="-s -w" -o /out/vocab_manager .
@@ -19,8 +21,8 @@ RUN apk --no-cache add ca-certificates
 
 WORKDIR /app
 
-COPY --from=builder /out/vocabs ./vocabs
+COPY --from=builder /out/vocab_manager ./vocab_manager
 
-EXPOSE 8079
+EXPOSE 8070
 
-ENTRYPOINT ["./vocabs"]
+ENTRYPOINT ["./vocab_manager"]

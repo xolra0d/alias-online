@@ -27,7 +27,7 @@ func main() {
 		cfg.Argon2idMemory,
 		cfg.Argon2idThreads,
 		cfg.Argon2idOutLen,
-		cfg.RSAPrivateKeyFilename,
+		cfg.JwtPrivateKeyFilename,
 	)
 	if err != nil {
 		l.Error("failed to start secrets", "error", err)
@@ -45,4 +45,5 @@ func main() {
 		cfg.RunningAddr,
 		cfg.ShutdownTimeout,
 	)
+	l.Info("All done")
 }

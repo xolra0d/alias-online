@@ -25,6 +25,8 @@ const (
 	TryGuess
 	FinishGame
 	GetNewWord
+	CreateRoom
+	LoadRoom
 )
 
 type ServerMessageType int
@@ -108,7 +110,54 @@ type Room struct {
 	ticker           *time.Ticker
 	RemainingTime    int `json:"remaining_time"`
 
-	logger *slog.Logger
+	logger       *slog.Logger
+	prepareState *PrepareState
+}
+
+func (r *Room) WaitUntilOperational() error {
+	return r.prepareState.WaitUntilOperational()
+}
+
+func (r *Room) SetOperational() {
+	r.prepareState.SetOperational()
+}
+
+func (r *Room) SetErrored() {
+	r.prepareState.SetErrored()
+}
+
+func (r *Room) UpdateStateFromRoom(newRoom *Room) {
+	r.Id = newRoom.Id
+	r.Admin = newRoom.Admin
+	r.Config = newRoom.Config
+	r.Players = newRoom.Players
+	r.CurrentWordIndex = newRoom.CurrentWordIndex
+	r.TurnOrder = newRoom.TurnOrder
+	r.currentPlayer = newRoom.currentPlayer
+	r.State = newRoom.State
+	r.logger = newRoom.logger
+}
+
+func (r *Room) UpdateStateFromRoomConfig(roomId, name, admin string, cfg *RoomConfig, logger *slog.Logger) {
+	r.Id = roomId
+	r.Admin = admin
+	r.Config = cfg
+	r.Players = map[string]*Player{admin: {Id: admin, Name: name}}
+	r.TurnOrder = []string{admin}
+	r.RemainingTime = cfg.Clock
+	r.logger = logger
+}
+
+func NewPreparingRoom() *Room {
+	return &Room{
+		ingest:        make(chan *ClientMessage, 50),
+		readyCount:    0,
+		join:          make(chan *Player, 5),
+		leave:         make(chan string, 5),
+		prepareState:  NewPrepareState(),
+		ticker:        &time.Ticker{},
+		RemainingTime: 100,
+	}
 }
 
 func NewRoom(
@@ -181,8 +230,6 @@ func (r *Room) ToMap() map[string]any {
 }
 
 func (r *Room) Run(onEmpty func(room *Room)) {
-	op := "room_worker.Run." + r.Id
-
 	for {
 		select {
 		case <-r.ticker.C:
@@ -191,7 +238,7 @@ func (r *Room) Run(onEmpty func(room *Room)) {
 				continue
 			}
 
-			r.logger.Info(op, "round ended", "currentPlayer", r.TurnOrder[r.currentPlayer])
+			r.logger.Info("round ended", "roomId", r.Id, "currentPlayer", r.TurnOrder[r.currentPlayer])
 
 			r.ticker.Stop()
 			r.State = RoundOver
@@ -217,13 +264,13 @@ func (r *Room) Run(onEmpty func(room *Room)) {
 				}
 				r.IncCurrentPlayer()
 			}
-			r.logger.Info(op, "player joined", "playerId", player.Id)
+			r.logger.Info("player joined", "roomId", r.Id, "playerId", player.Id)
 		case id := <-r.leave:
 			r.handleLeave(id)
-			r.logger.Info(op, "player left", "playerId", id)
+			r.logger.Info("player left", "roomId", r.Id, "playerId", id)
 			if r.readyCount == 0 {
 				onEmpty(r)
-				r.logger.Info(op, "room_worker is removed")
+				r.logger.Info("room is removed", "roomId", r.Id)
 				return
 			}
 		}
@@ -231,8 +278,6 @@ func (r *Room) Run(onEmpty func(room *Room)) {
 }
 
 func (r *Room) handleMessage(msg *ClientMessage) {
-	op := "room_worker.handleMessage." + r.Id
-
 	switch r.State {
 	case RoundOver:
 		switch msg.MsgType {
@@ -246,16 +291,16 @@ func (r *Room) handleMessage(msg *ClientMessage) {
 			r.ticker = time.NewTicker(time.Second) // update Room.RemainingTime every second.
 			r.wordShown = false
 			r.ReportUpdate()
-			r.logger.Info(op, "round started", "currentPlayer", r.TurnOrder[r.currentPlayer])
+			r.logger.Info("round started", "roomId", r.Id, "currentPlayer", r.TurnOrder[r.currentPlayer])
 		case FinishGame:
 			if msg.UserId != r.Admin {
 				return
 			}
 			r.State = Finished
 			r.ReportUpdate()
-			r.logger.Info(op, "game is finished")
+			r.logger.Info("game is finished", "roomId", r.Id)
 		default:
-			r.logger.Warn(op, "unknown msg type", "msg", msg)
+			r.logger.Warn("unknown msg type", "roomId", r.Id, "msgType", msg.MsgType, "userId", msg.UserId)
 		}
 	case Explaining:
 		switch msg.MsgType {
@@ -274,16 +319,14 @@ func (r *Room) handleMessage(msg *ClientMessage) {
 			}
 			b, err := json.Marshal(&m)
 			if err != nil {
-				r.logger.Error(op, "unexpected panic, could not marshal", "msg", m, "error", err)
+				r.logger.Error("could not marshal YourWord", "roomId", r.Id, "userId", msg.UserId, "error", err)
 				return
 			}
 			r.Players[msg.UserId].ToSend <- b
 
 			if !r.wordShown {
 				r.wordShown = true
-
-				r.logger.Info(op, "new word", "word", word, "currentPlayer", msg.UserId)
-
+				r.logger.Info("new word shown", "roomId", r.Id, "word", word, "currentPlayer", msg.UserId)
 				r.Players[msg.UserId].WordsTried++
 				r.ReportUpdate()
 			}
@@ -303,11 +346,11 @@ func (r *Room) handleMessage(msg *ClientMessage) {
 				},
 			}
 
-			r.logger.Info(op, "new word", "word", word, "currentPlayer", msg.UserId)
+			r.logger.Info("new word", "roomId", r.Id, "word", word, "currentPlayer", msg.UserId)
 
 			b, err := json.Marshal(&m)
 			if err != nil {
-				r.logger.Error(op, "unexpected panic, could not marshal", "msg", m, "error", err)
+				r.logger.Error("could not marshal YourWord", "roomId", r.Id, "userId", msg.UserId, "error", err)
 				return
 			}
 			r.Players[msg.UserId].ToSend <- b
@@ -330,7 +373,7 @@ func (r *Room) handleMessage(msg *ClientMessage) {
 				id := r.TurnOrder[r.currentPlayer]
 				r.Players[id].WordsGuessed++
 
-				r.logger.Info(op, "Word guessed", "word", word)
+				r.logger.Info("word guessed", "roomId", r.Id, "word", word, "guesser", msg.UserId, "currentPlayer", id)
 
 				r.CurrentWordIndex++
 				r.wordShown = false
@@ -344,13 +387,13 @@ func (r *Room) handleMessage(msg *ClientMessage) {
 				}
 				b, err := json.Marshal(&m)
 				if err != nil {
-					r.logger.Error(op, "unexpected panic, could not marshal", "msg", m, "error", err)
+					r.logger.Error("could not marshal WrongGuess", "roomId", r.Id, "userId", msg.UserId, "error", err)
 					return
 				}
 				r.Players[msg.UserId].ToSend <- b
 			}
 		default:
-			r.logger.Warn(op, "unknown msg type", "msg", msg)
+			r.logger.Warn("unknown msg type", "roomId", r.Id, "msgType", msg.MsgType, "userId", msg.UserId)
 		}
 	case Finished:
 		if msg.MsgType == GetState {
@@ -360,8 +403,6 @@ func (r *Room) handleMessage(msg *ClientMessage) {
 }
 
 func (r *Room) WordGuessed(guesser string) {
-	op := "room_worker.WordGuessed." + r.Id
-
 	for _, player := range r.Players {
 		if !player.Ready {
 			continue
@@ -382,7 +423,7 @@ func (r *Room) WordGuessed(guesser string) {
 		}
 		b, err := json.Marshal(&m)
 		if err != nil {
-			r.logger.Error(op, "unexpected panic, could not marshal", "msg", m, "error", err)
+			r.logger.Error("could not marshal WordGuessed", "roomId", r.Id, "guesser", guesser, "playerId", player.Id, "error", err)
 			return
 		}
 		player.ToSend <- b
@@ -406,30 +447,26 @@ func (r *Room) NextWord() string {
 }
 
 func (r *Room) sendState(id string) {
-	op := "room_worker.sendState." + r.Id
-
 	m := ServerMessage{
 		CurrentState,
 		r.ToMap(),
 	}
 	b, err := json.Marshal(&m)
 	if err != nil {
-		r.logger.Error(op, "unexpected panic, could not marshal", "msg", m, "error", err)
+		r.logger.Error("could not marshal CurrentState", "roomId", r.Id, "userId", id, "error", err)
 		return
 	}
 	r.Players[id].ToSend <- b
 }
 
 func (r *Room) ReportUpdate() {
-	op := "room_worker.ReportUpdate." + r.Id
-
 	m := ServerMessage{
 		MsgType: NewUpdate,
 		MsgData: make(map[string]any),
 	}
 	b, err := json.Marshal(&m)
 	if err != nil {
-		r.logger.Error(op, "unexpected panic, could not marshal", "msg", m, "error", err)
+		r.logger.Error("could not marshal NewUpdate", "roomId", r.Id, "error", err)
 		return
 	}
 
@@ -493,8 +530,6 @@ func toClientMessage(v map[string]any) (*ClientMessage, error) {
 }
 
 func (r *Room) RunWriter(ctx context.Context, cancel context.CancelFunc, c *websocket.Conn, player *Player, wsWriteTimeout, pingTimeout time.Duration) {
-	op := "room_worker.RunWriter" + r.Id
-
 	ping := time.NewTicker(time.Second * 10)
 	for {
 		select {
@@ -503,16 +538,16 @@ func (r *Room) RunWriter(ctx context.Context, cancel context.CancelFunc, c *webs
 			err := c.Write(writeCtx, websocket.MessageBinary, msg)
 			writeCancel()
 			if err != nil {
-				r.logger.Error(op, "write error", "playerId", player.Id, "msg", msg, "err", err)
+				r.logger.Error("write error", "roomId", r.Id, "playerId", player.Id, "error", err)
 				cancel()
-				return // this goroutine does not log errors.
+				return
 			}
 		case <-ping.C:
 			pingCtx, pingCancel := context.WithTimeout(ctx, pingTimeout)
 			err := c.Ping(pingCtx)
 			pingCancel()
 			if err != nil {
-				r.logger.Error(op, "ping error", "playerId", player.Id, "err", err)
+				r.logger.Error("ping error", "roomId", r.Id, "playerId", player.Id, "error", err)
 				cancel()
 				return
 			}
@@ -522,9 +557,7 @@ func (r *Room) RunWriter(ctx context.Context, cancel context.CancelFunc, c *webs
 	}
 }
 
-func (r *Room) RunReader(ctx context.Context, cancel context.CancelFunc, c *websocket.Conn, player *Player, maxMessagesPerSecond int) error {
-	op := "room_worker.RunReader." + r.Id
-
+func (r *Room) RunReader(ctx context.Context, cancel context.CancelFunc, c *websocket.Conn, player *Player, maxMessagesPerSecond int) {
 	windowStartedAt := time.Now()
 	messagesInWindow := 0
 	for {
@@ -534,11 +567,11 @@ func (r *Room) RunReader(ctx context.Context, cancel context.CancelFunc, c *webs
 			cancel()
 			closeStatus := websocket.CloseStatus(err)
 			if closeStatus == websocket.StatusGoingAway || closeStatus == websocket.StatusNormalClosure {
-				r.logger.Info(op, "ws client disconnected normally", "roomId", r.Id)
-				return nil
+				r.logger.Info("ws client disconnected normally", "roomId", r.Id, "playerId", player.Id)
+				return
 			}
-			r.logger.Error(op, "ws read error", "roomId", r.Id, "error", err)
-			return err
+			r.logger.Error("ws read error", "roomId", r.Id, "playerId", player.Id, "error", err)
+			return
 		}
 
 		if maxMessagesPerSecond > 0 {
@@ -550,22 +583,23 @@ func (r *Room) RunReader(ctx context.Context, cancel context.CancelFunc, c *webs
 			messagesInWindow++
 			if messagesInWindow > maxMessagesPerSecond {
 				_ = c.Close(websocket.StatusPolicyViolation, "too many messages")
-				r.logger.Error(op, "websocket message rate limit exceeded", "roomId", r.Id, "playerId", player.Id)
+				r.logger.Error("websocket message rate limit exceeded", "roomId", r.Id, "playerId", player.Id)
 				cancel()
-				return fmt.Errorf("websocket message rate limit exceeded")
+				return
 			}
 		}
 
 		m, ok := v.(map[string]any)
 		if !ok {
-			err := fmt.Errorf("invalid client msg: %v", v)
+			r.logger.Error("invalid client msg type assertion", "roomId", r.Id, "playerId", player.Id)
 			cancel()
-			return err
+			return
 		}
 		msg, err := toClientMessage(m)
 		if err != nil {
+			r.logger.Error("invalid client msg", "roomId", r.Id, "playerId", player.Id, "error", err)
 			cancel()
-			return err
+			return
 		}
 		r.ingest <- msg
 	}

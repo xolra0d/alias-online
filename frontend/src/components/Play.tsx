@@ -28,15 +28,7 @@ import LogoutIcon from "@mui/icons-material/Logout";
 import PlayArrowIcon from "@mui/icons-material/PlayArrow";
 import SendIcon from "@mui/icons-material/Send";
 import SkipNextIcon from "@mui/icons-material/SkipNext";
-
-interface CreateUserResponse {
-  err?: string;
-  credentials?: {
-    id: string;
-    secret: string;
-    name: string;
-  };
-}
+import { ensureAuthenticated } from "../auth";
 
 interface Player {
   id: string;
@@ -79,6 +71,8 @@ const CLIENT_GET_WORD = 2;
 const CLIENT_TRY_GUESS = 3;
 const CLIENT_FINISH_GAME = 4;
 const CLIENT_GET_NEW_WORD = 5;
+const CLIENT_CREATE_ROOM = 6;
+const CLIENT_LOAD_ROOM = 7;
 
 // Server Message Types
 const SERVER_NEW_UPDATE = 0;
@@ -87,6 +81,38 @@ const SERVER_YOUR_WORD = 2;
 const SERVER_WORD_GUESSED = 3;
 const SERVER_RIGHT_GUESS = 4;
 const SERVER_WRONG_GUESS = 5;
+const SERVER_REDIRECT = 6;
+
+interface PlayWorkerResponse {
+  err?: string;
+  worker?: string;
+}
+
+interface CreatorBootstrap {
+  creatorLogin: string;
+  config: {
+    language: string;
+    "rude-words": boolean;
+    "additional-vocabulary": string[];
+    clock: number;
+  };
+}
+
+const CREATOR_ROOM_STORAGE_PREFIX = "creator-room:";
+
+const workerToWsBase = (worker: string): string => {
+  if (worker.startsWith("http://")) {
+    return worker.replace(/^http:/, "ws:");
+  }
+  if (worker.startsWith("https://")) {
+    return worker.replace(/^https:/, "wss:");
+  }
+  if (worker.startsWith("ws://") || worker.startsWith("wss://")) {
+    return worker;
+  }
+  const secure = window.location.protocol === "https:";
+  return `${secure ? "wss" : "ws"}://${worker}`;
+};
 
 const getPlayerLabel = (player: Player, currentUserId: string | null) =>
   player.id === currentUserId
@@ -199,113 +225,158 @@ export default function Play() {
     let cancelled = false;
 
     const connect = async () => {
-      let login = localStorage.getItem("login");
-      let name = localStorage.getItem("name");
-      let secret = localStorage.getItem("secret");
-
-      if (!login || !secret) {
-        try {
-          const response = await fetch(`${BACKEND_URL}/api/create-user`, {
-            method: "POST",
-          });
-          const data: CreateUserResponse = await response.json();
-
-          if (data.credentials) {
-            login = data.credentials.id;
-            name = data.credentials.name;
-            secret = data.credentials.secret;
-            localStorage.setItem("login", login);
-            localStorage.setItem("secret", secret);
-            localStorage.setItem("name", name);
-            setUserId(login);
-          } else {
-            setError(`Failed to create user: ${data.err}`);
-            return;
-          }
-        } catch {
-          setError("Network error while creating user.");
-          return;
-        }
-      } else {
-        setUserId(login);
+      const httpBase = BACKEND_URL || window.location.origin;
+      if (!room_id) {
+        setError("Room id is missing.");
+        return;
       }
+      const creds = await ensureAuthenticated(httpBase);
+      const login = creds.login;
+      const name = creds.name;
+      setUserId(creds.login);
 
       if (cancelled) return;
 
-      const wsBase = BACKEND_URL
-        ? BACKEND_URL.replace(/^http/, "ws")
-        : window.location.origin.replace(/^http/, "ws");
-      const wsUrl = new URL(`/api/ws/${room_id}`, wsBase);
-      wsUrl.searchParams.set("id", login!);
-      wsUrl.searchParams.set("name", name!);
-      wsUrl.searchParams.set("secret", secret!);
+      const creatorBootstrapRaw = sessionStorage.getItem(
+        `${CREATOR_ROOM_STORAGE_PREFIX}${room_id}`,
+      );
+      let firstMessageType = CLIENT_LOAD_ROOM;
+      let firstMessageData: Record<string, unknown> = {};
 
-      const ws = new WebSocket(wsUrl.toString());
-      wsRef.current = ws;
-
-      ws.onopen = () => {
-        if (!cancelled) {
-          setConnecting(false);
-          fetchState();
-        }
-      };
-
-      ws.onmessage = async (event) => {
-        const text =
-          event.data instanceof Blob ? await event.data.text() : event.data;
-
+      if (creatorBootstrapRaw) {
         try {
-          const json = JSON.parse(text);
-
-          switch (json.msg_type) {
-            case SERVER_NEW_UPDATE:
-              fetchState();
-              break;
-            case SERVER_CURRENT_STATE: {
-              const newState = json.msg_data as GameState;
-              setGameState(newState);
-              gameStateRef.current = newState;
-              break;
-            }
-            case SERVER_YOUR_WORD:
-              setCurrentWord(json.msg_data.word);
-              break;
-            case SERVER_WORD_GUESSED:
-              setLastGuessResult({
-                msg: `Word guessed by ${json.msg_data.guesser.slice(0, 8)}!`,
-                type: "info",
-              });
-              if (gameStateRef.current?.current_player === userId) {
-                setCurrentWord(null);
-              }
-              break;
-            case SERVER_RIGHT_GUESS:
-              setLastGuessResult({ msg: "Correct guess!", type: "success" });
-              break;
-            case SERVER_WRONG_GUESS:
-              setLastGuessResult({
-                msg: "Wrong guess, try again!",
-                type: "error",
-              });
-              break;
+          const parsed = JSON.parse(creatorBootstrapRaw) as CreatorBootstrap;
+          if (
+            parsed &&
+            parsed.creatorLogin === login &&
+            parsed.config &&
+            typeof parsed.config.language === "string" &&
+            typeof parsed.config["rude-words"] === "boolean" &&
+            Array.isArray(parsed.config["additional-vocabulary"]) &&
+            typeof parsed.config.clock === "number"
+          ) {
+            firstMessageType = CLIENT_CREATE_ROOM;
+            firstMessageData = parsed.config;
+            sessionStorage.removeItem(`${CREATOR_ROOM_STORAGE_PREFIX}${room_id}`);
           }
-        } catch (parseError) {
-          console.error("[WebSocket] Error parsing message:", parseError, text);
+        } catch {
+          sessionStorage.removeItem(`${CREATOR_ROOM_STORAGE_PREFIX}${room_id}`);
         }
+      }
+
+      const playResp = await fetch(`${httpBase}/api/protected/play/${room_id}`, {
+        method: "GET",
+        credentials: "include",
+      });
+      const playData: PlayWorkerResponse = await playResp.json();
+      if (!playResp.ok || !playData.worker) {
+        setError(playData.err || "Failed to resolve room worker.");
+        setConnecting(false);
+        return;
+      }
+
+      const connectToWorker = (
+        worker: string,
+        initialType: number,
+        initialData: Record<string, unknown>,
+      ) => {
+        const wsUrl = new URL(`/api/play/${room_id}`, workerToWsBase(worker));
+        wsUrl.searchParams.set("name", name!);
+
+        const ws = new WebSocket(wsUrl.toString());
+        wsRef.current = ws;
+
+        ws.onopen = () => {
+          if (!cancelled) {
+            ws.send(
+              JSON.stringify({
+                user_id: login,
+                type: initialType,
+                data: initialData,
+              }),
+            );
+            setConnecting(false);
+            setError(null);
+            fetchState();
+          }
+        };
+
+        ws.onmessage = async (event) => {
+          const text =
+            event.data instanceof Blob ? await event.data.text() : event.data;
+
+          try {
+            const json = JSON.parse(text);
+
+            switch (json.msg_type) {
+              case SERVER_NEW_UPDATE:
+                fetchState();
+                break;
+              case SERVER_CURRENT_STATE: {
+                const newState = json.msg_data as GameState;
+                setGameState(newState);
+                gameStateRef.current = newState;
+                break;
+              }
+              case SERVER_YOUR_WORD:
+                setCurrentWord(json.msg_data.word);
+                break;
+              case SERVER_WORD_GUESSED:
+                setLastGuessResult({
+                  msg: `Word guessed by ${json.msg_data.guesser.slice(0, 8)}!`,
+                  type: "info",
+                });
+                if (gameStateRef.current?.current_player === userId) {
+                  setCurrentWord(null);
+                }
+                break;
+              case SERVER_RIGHT_GUESS:
+                setLastGuessResult({ msg: "Correct guess!", type: "success" });
+                break;
+              case SERVER_WRONG_GUESS:
+                setLastGuessResult({
+                  msg: "Wrong guess, try again!",
+                  type: "error",
+                });
+                break;
+              case SERVER_REDIRECT: {
+                const nextWorker = json.msg_data?.worker;
+                if (typeof nextWorker === "string" && nextWorker.length > 0) {
+                  ws.close();
+                  connectToWorker(nextWorker, initialType, initialData);
+                }
+                break;
+              }
+            }
+          } catch (parseError) {
+            console.error("[WebSocket] Error parsing message:", parseError, text);
+          }
+        };
+
+        ws.onerror = (event) => {
+          console.error("[WebSocket] Error:", event);
+          if (!cancelled) {
+            setError("WebSocket connection error.");
+            setConnecting(false);
+          }
+        };
+
+        ws.onclose = (event) => {
+          console.log("[WebSocket] Closed:", event.code, event.reason);
+          if (!cancelled) setConnecting(false);
+        };
       };
 
-      ws.onerror = (event) => {
-        console.error("[WebSocket] Error:", event);
-        if (!cancelled) setError("WebSocket connection error.");
-      };
-
-      ws.onclose = (event) => {
-        console.log("[WebSocket] Closed:", event.code, event.reason);
-        if (!cancelled) setConnecting(false);
-      };
+      connectToWorker(playData.worker, firstMessageType, firstMessageData);
     };
 
-    connect();
+    connect().catch((e) => {
+      console.error("[Play] connect failed", e);
+      if (!cancelled) {
+        setError("Failed to connect to room.");
+        setConnecting(false);
+      }
+    });
 
     return () => {
       cancelled = true;

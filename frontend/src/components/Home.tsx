@@ -14,29 +14,46 @@ import ToggleButtonGroup from "@mui/material/ToggleButtonGroup";
 import Typography from "@mui/material/Typography";
 import { alpha, useTheme } from "@mui/material/styles";
 import { useNavigate } from "react-router";
-
-interface UserCredentials {
-  id: string;
-  secret: string;
-  name: string;
-}
-
-interface CreateUserResponse {
-  err?: string;
-  credentials?: UserCredentials;
-}
-
-interface CreateRoomResponse {
-  err?: string;
-  room?: string;
-}
+import { ensureAuthenticated } from "../auth";
 
 interface AvailableVocabsResponse {
   err?: string;
+  vocabs?: string[];
   languages?: string[];
 }
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "";
+const ROOM_ID_LENGTH = 6;
+const ROOM_ID_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+const CREATOR_ROOM_STORAGE_PREFIX = "creator-room:";
+
+interface PlayWorkerResponse {
+  err?: string;
+  worker?: string;
+}
+
+interface RoomConfigPayload {
+  language: string;
+  "rude-words": boolean;
+  "additional-vocabulary": string[];
+  clock: number;
+}
+
+const generateRoomId = (length = ROOM_ID_LENGTH): string => {
+  const bytes = new Uint8Array(length);
+  crypto.getRandomValues(bytes);
+  let roomId = "";
+  for (const b of bytes) {
+    roomId += ROOM_ID_ALPHABET[b % ROOM_ID_ALPHABET.length];
+  }
+  return roomId;
+};
+
+const parseAdditionalVocabulary = (raw: string): string[] =>
+  raw
+    .split(",")
+    .map((word) => word.trim())
+    .filter((word) => word.length > 0);
 
 const roomSteps = [
   {
@@ -76,12 +93,13 @@ export default function Home() {
     fetch(`${BACKEND_URL}/api/available-vocabs`)
       .then((res) => res.json())
       .then((data: AvailableVocabsResponse) => {
-        if (data.languages && data.languages.length > 0) {
-          setLanguages(data.languages);
+        const availableLanguages = data.vocabs ?? data.languages ?? [];
+        if (availableLanguages.length > 0) {
+          setLanguages(availableLanguages);
           setFormData((prev) =>
-            prev.language && data.languages!.includes(prev.language)
+            prev.language && availableLanguages.includes(prev.language)
               ? prev
-              : { ...prev, language: data.languages![0] },
+              : { ...prev, language: availableLanguages[0] },
           );
         } else {
           setLoadError(
@@ -132,57 +150,33 @@ export default function Home() {
     e.preventDefault();
     setFormError(null);
 
-    let login = localStorage.getItem("login");
-    let name = localStorage.getItem("name");
-    let secret = localStorage.getItem("secret");
-
-    if (!login || !secret) {
-      try {
-        const response = await fetch(`${BACKEND_URL}/api/create-user`, {
-          method: "POST",
-        });
-        const data: CreateUserResponse = await response.json();
-
-        if (data.credentials) {
-          login = data.credentials.id;
-          name = data.credentials.name;
-          secret = data.credentials.secret;
-
-          localStorage.setItem("login", login);
-          localStorage.setItem("secret", secret);
-          localStorage.setItem("name", name);
-        } else {
-          setFormError(`Failed to create user: ${data.err}`);
-          return;
-        }
-      } catch {
-        setFormError("Network error while creating user.");
-        return;
-      }
-    }
-
     try {
-      const params = new URLSearchParams();
-      params.append("language", formData.language);
-      params.append("rude-words", String(formData["rude-words"]));
-      params.append("additional-vocabulary", formData.additionalVocabulary);
-      params.append("clock", String(formData.clock));
-
-      const response = await fetch(`${BACKEND_URL}/api/protected/create-room`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-          "User-Id": login || "",
-          "User-Secret": secret || "",
-        },
-        body: params,
+      const httpBase = BACKEND_URL || window.location.origin;
+      const creds = await ensureAuthenticated(httpBase);
+      const roomId = generateRoomId();
+      const response = await fetch(`${httpBase}/api/protected/play/${roomId}`, {
+        method: "GET",
+        credentials: "include",
       });
 
-      const data: CreateRoomResponse = await response.json();
-      if (data.room) {
-        navigate(`/play/${data.room}`);
+      const data: PlayWorkerResponse = await response.json();
+      if (!response.ok || !data.worker) {
+        setFormError(`Failed to create room: ${data.err ?? "backend is unavailable"}`);
       } else {
-        setFormError(`Failed to create room: ${data.err}`);
+        const roomConfig: RoomConfigPayload = {
+          language: formData.language,
+          "rude-words": formData["rude-words"],
+          "additional-vocabulary": parseAdditionalVocabulary(formData.additionalVocabulary),
+          clock: Number(formData.clock),
+        };
+        sessionStorage.setItem(
+          `${CREATOR_ROOM_STORAGE_PREFIX}${roomId}`,
+          JSON.stringify({
+            creatorLogin: creds.login,
+            config: roomConfig,
+          }),
+        );
+        navigate(`/play/${roomId}`);
       }
     } catch {
       setFormError("Network error while creating room.");

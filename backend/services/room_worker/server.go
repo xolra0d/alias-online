@@ -31,7 +31,7 @@ func RunHttpClient(handles *Handles, secrets *Secrets, logger *slog.Logger, runn
 	mux.HandleFunc("GET /api/ok", handles.Healthy)
 	mux.Handle("GET /api/play/{roomId}", middleware.Chain( // GET for websockets
 		http.HandlerFunc(handles.InitWS),
-		middleware.AuthJWT(logger, secrets.CheckJwtToken),
+		middleware.AuthJWT(logger, secrets.CheckJwt),
 	))
 
 	server := &http.Server{
@@ -71,7 +71,7 @@ func (h *Handles) InitWS(w http.ResponseWriter, r *http.Request) {
 	if roomId == "" {
 		err := api.WriteJSON(w, http.StatusBadRequest, map[string]any{"err": "missing room_worker id"})
 		if err != nil {
-			h.logger.Error(op, "could not write response", "err", err)
+			h.logger.Error("could not write response", "op", op, "err", err)
 		}
 		return
 	}
@@ -81,13 +81,13 @@ func (h *Handles) InitWS(w http.ResponseWriter, r *http.Request) {
 	if name == "" {
 		err := api.WriteJSON(w, http.StatusBadRequest, map[string]any{"err": "missing name"})
 		if err != nil {
-			h.logger.Error(op, "could not write response", "err", err)
+			h.logger.Error("could not write response", "op", op, "err", err)
 		}
 		return
 	}
 	err := h.rooms.RunWS(w, r, roomId, username, name)
 	if err != nil {
-		h.logger.Error(op, "error while RunWS", "roomId", roomId, "username", username, "err", err)
+		h.logger.Error("error while RunWS", "roomId", roomId, "username", username, "err", err)
 		err = api.WriteJSON(w, http.StatusInternalServerError, map[string]any{"err": "internal error"})
 		if err != nil {
 			h.logger.Error("could not write response", "op", op, "err", err)

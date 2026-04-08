@@ -31,4 +31,5 @@ func main() {
 
 	l.Info("stopping scan for new workers")
 	manager.StopScanForNewWorkers()
+	l.Info("All done")
 }

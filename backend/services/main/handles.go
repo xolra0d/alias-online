@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"regexp"
 	"time"
 
 	"github.com/xolra0d/alias-online/shared/pkg/api"
@@ -20,32 +21,41 @@ import (
 )
 
 func NewRoomManagerClient(roomManagerUrl string, logger *slog.Logger) (pbRoomManager.RoomManagerServiceClient, func() error, error) {
-	conn, err := grpc.NewClient(roomManagerUrl, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient(
+		roomManagerUrl,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithDefaultServiceConfig(`{"loadBalancingPolicy":"round_robin"}`),
+	)
 	if err != nil {
 		logger.Error("failed to connect to room manager", "roomManagerUrl", roomManagerUrl, "err", err)
 		return nil, nil, err
 	}
-	//defer conn.Close()
 	return pbRoomManager.NewRoomManagerServiceClient(conn), conn.Close, nil
 }
 
 func NewVocabManagerClient(vocabManagerUrl string, logger *slog.Logger) (pbVocabManager.VocabManagerServiceClient, func() error, error) {
-	conn, err := grpc.NewClient(vocabManagerUrl, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient(
+		vocabManagerUrl,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithDefaultServiceConfig(`{"loadBalancingPolicy":"round_robin"}`),
+	)
 	if err != nil {
 		logger.Error("failed to connect to vocab manager", "vocabManagerUrl", vocabManagerUrl, "err", err)
 		return nil, nil, err
 	}
-	//defer conn.Close()
 	return pbVocabManager.NewVocabManagerServiceClient(conn), conn.Close, nil
 }
 
 func NewAuthClient(authUrl string, logger *slog.Logger) (pbAuth.AuthServiceClient, func() error, error) {
-	conn, err := grpc.NewClient(authUrl, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient(
+		authUrl,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithDefaultServiceConfig(`{"loadBalancingPolicy":"round_robin"}`),
+	)
 	if err != nil {
 		logger.Error("failed to connect to vocab manager", "authUrl", authUrl, "err", err)
 		return nil, nil, err
 	}
-	//defer conn.Close()
 	return pbAuth.NewAuthServiceClient(conn), conn.Close, nil
 }
 
@@ -221,10 +231,15 @@ func (h *Handles) Login(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func isValidRoomId(roomId string) bool {
+	validRoomId := regexp.MustCompile(`^[A-Z2-7]{6}$`)
+	return validRoomId.MatchString(roomId)
+}
+
 func (h *Handles) Play(w http.ResponseWriter, r *http.Request) {
 	roomId := r.PathValue("roomId")
-	if roomId == "" {
-		writeErrorAndLogWriteError(w, http.StatusBadRequest, "missing roomId", h.logger)
+	if !isValidRoomId(roomId) {
+		writeErrorAndLogWriteError(w, http.StatusBadRequest, "invalid room id", h.logger)
 		return
 	}
 

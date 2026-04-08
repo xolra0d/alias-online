@@ -30,6 +30,7 @@ type Secrets struct {
 	privateKey      *rsa.PrivateKey
 }
 
+// loads rsa private key from file.
 func loadPrivateKey(path string) (*rsa.PrivateKey, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -47,6 +48,7 @@ func loadPrivateKey(path string) (*rsa.PrivateKey, error) {
 	return key, nil
 }
 
+// NewSecrets creates new secrets manager.
 func NewSecrets(
 	logger *slog.Logger,
 	Argon2idTime uint32,
@@ -77,7 +79,7 @@ const (
 	hashLengthKey    = "l"
 )
 
-// hashSecret hashes any password with random salt and returns result in phcformat string.
+// hashSecret hashes using argon2id any password with random salt and returns result in phcformat string.
 // More: https://github.com/P-H-C/phc-string-format/blob/master/phc-sf-spec.md
 func (s *Secrets) hashSecret(secret string) string {
 	salt := s.GenerateSecretBase32()
@@ -194,6 +196,7 @@ func (s *Secrets) GenerateSecretBase32() string {
 	return crand.Text()
 }
 
+// ValidateName check if name is valid for name field.
 func ValidateName(name string) error {
 	if len(name) < 8 || len(name) > 20 {
 		return fmt.Errorf("invalid name")
@@ -201,6 +204,7 @@ func ValidateName(name string) error {
 	return nil
 }
 
+// ValidateLogin check if login is valid for login field.
 func ValidateLogin(login string) error {
 	if len(login) < 8 || len(login) > 20 {
 		return fmt.Errorf("invalid login")
@@ -208,6 +212,7 @@ func ValidateLogin(login string) error {
 	return nil
 }
 
+// ValidatePassword check if password is valid for password field.
 func ValidatePassword(password string) error {
 	if len(password) < 8 || len(password) > 20 {
 		return fmt.Errorf("invalid password")
@@ -215,6 +220,7 @@ func ValidatePassword(password string) error {
 	return nil
 }
 
+// ValidateForRegister checks if name, login and password are valid for according fields in db.
 func ValidateForRegister(name, login, password string) error {
 	if err := ValidateName(name); err != nil {
 		return err
@@ -228,6 +234,7 @@ func ValidateForRegister(name, login, password string) error {
 	return nil
 }
 
+// ValidateForLogin checks if login and password are valid for according fields in db.
 func ValidateForLogin(login, password string) error {
 	if err := ValidateLogin(login); err != nil {
 		return err
@@ -238,7 +245,7 @@ func ValidateForLogin(login, password string) error {
 	return nil
 }
 
-// NewJWT Issues new JWT token.
+// NewJWT Issues new JWT.
 func (s *Secrets) NewJWT(login string, exp time.Time) (string, error) {
 	claims := jwt.MapClaims{
 		"sub": login,
@@ -254,17 +261,3 @@ func (s *Secrets) NewJWT(login string, exp time.Time) (string, error) {
 	}
 	return t, nil
 }
-
-//// EncodeJWTPublicKey encodes public JWT token to share with other services.
-//func (s *Secrets) EncodeJWTPublicKey() (string, error) {
-//	pubDER, err := x509.MarshalPKIXPublicKey(&s.privateKey.PublicKey)
-//	if err != nil {
-//		return "", fmt.Errorf("failed to marshal public key: %w", err)
-//	}
-//	block := &pem.Block{
-//		Type:  "PUBLIC KEY",
-//		Bytes: pubDER,
-//	}
-//
-//	return string(pem.EncodeToMemory(block)), nil
-//}

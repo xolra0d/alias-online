@@ -17,8 +17,6 @@ import (
 )
 
 func RunGrpcServer(roomManager *RoomManager, logger *slog.Logger, runningAddr string, shutdownTimeout time.Duration) {
-	const op = "main.RunGrpcServer"
-
 	lis, err := net.Listen("tcp", runningAddr)
 	if err != nil {
 		logger.Error("failed to listen", "addr", runningAddr, "err", err)
@@ -43,6 +41,7 @@ func RunGrpcServer(roomManager *RoomManager, logger *slog.Logger, runningAddr st
 	<-shutdown
 	logger.Info("shutdown initiated")
 
+	// grpc does not have context aware shutdown.
 	go func() {
 		time.Sleep(shutdownTimeout)
 		logger.Warn("timeout shutting down")

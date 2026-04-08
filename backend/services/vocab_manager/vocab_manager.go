@@ -9,6 +9,7 @@ import (
 	"time"
 )
 
+// Vocabulary is vocabulary of words for room.
 type Vocabulary struct {
 	PrimaryWords []string
 	RudeWords    []string
@@ -30,6 +31,7 @@ type VocabManager struct {
 	ClosePostgresConnTimeout time.Duration
 }
 
+// NewVocabManager creates new vocab manager.
 func NewVocabManager(db *Postgres, logger *slog.Logger, loadVocabsTimeout, pollInterval, closePostgresConnTimeout time.Duration) (*VocabManager, bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), loadVocabsTimeout)
 	vocabs, ok := db.LoadVocabs(ctx)
@@ -55,6 +57,7 @@ func NewVocabManager(db *Postgres, logger *slog.Logger, loadVocabsTimeout, pollI
 	}, true
 }
 
+// StartObservation subscribes to updates from postgres to refresh vocabularies efficiently.
 func (v *VocabManager) StartObservation() {
 	v.logger.Info("starting observation loop")
 
@@ -110,6 +113,7 @@ func (v *VocabManager) StartObservation() {
 	}
 }
 
+// StopObservation stops current observation loop.
 func (v *VocabManager) StopObservation() {
 	v.logger.Info("stopping observation loop")
 	v.doneCancel()
@@ -117,13 +121,15 @@ func (v *VocabManager) StopObservation() {
 	v.logger.Info("stopped observation loop")
 }
 
+// AvailableVocabs returns names of available vocabs.
 func (v *VocabManager) AvailableVocabs() []string {
 	v.lock.RLock()
 	defer v.lock.RUnlock()
 	return slices.Collect(maps.Keys(v.vocabs))
 }
 
-func (v *VocabManager) Vocab(name string) (primaryWords, RudeWords []string) {
+// Vocab returns vocabulary with given name. Will return empty vocab, if this name does not exist.
+func (v *VocabManager) Vocab(name string) Vocabulary {
 	v.lock.RLock()
 	defer v.lock.RUnlock()
 	vocab := v.vocabs[name]
@@ -134,5 +140,5 @@ func (v *VocabManager) Vocab(name string) (primaryWords, RudeWords []string) {
 	rude := make([]string, len(vocab.RudeWords))
 	copy(rude, vocab.RudeWords)
 
-	return primary, rude
+	return Vocabulary{primary, rude}
 }

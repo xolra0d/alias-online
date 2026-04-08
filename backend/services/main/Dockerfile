@@ -6,7 +6,9 @@ COPY go.work ./
 COPY shared ./shared
 COPY services/main ./services/main
 COPY services/auth ./services/auth
-COPY services/vocabs ./services/vocabs
+COPY services/room_manager ./services/room_manager
+COPY services/room_worker ./services/room_worker
+COPY services/vocab_manager ./services/vocab_manager
 
 WORKDIR /workspace/services/main
 RUN go mod download

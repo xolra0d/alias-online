@@ -31,39 +31,41 @@ func main() {
 		return
 	}
 
-	roomManagerClient, closeRoomManagerFunc, err := NewRoomManagerClient("localhost:8060", l)
+	roomManagerClient, closeRoomManagerFunc, err := NewRoomManagerClient(cfg.RoomManagerUrl, l)
 	if err != nil {
 		l.Error("failed to start room manager client", "error", err)
 		return
 	}
 	defer closeRoomManagerFunc()
-	vocabManagerClient, closeVocabManagerFunc, err := NewVocabManagerClient("localhost:8070", l)
+	vocabManagerClient, closeVocabManagerFunc, err := NewVocabManagerClient(cfg.VocabManagerUrl, l)
 	if err != nil {
 		l.Error("failed to start vocab manager client", "error", err)
 		return
 	}
 	defer closeVocabManagerFunc()
-	
+
 	rooms := NewRooms(
 		postgres,
 		l,
 		roomManagerClient,
 		vocabManagerClient,
 
-		cfg.RunningAddr,
+		cfg.WorkerPublicAddr,
 		strings.Split(cfg.WsOriginPatterns, ","),
 		cfg.LoadRoomTimeout,
 		cfg.SaveRoomTimeout,
 		cfg.WsWriteTimeout,
 		cfg.WsPingTimeout,
 		cfg.MaxMessagesPerSecond,
+		cfg.MaxClockValue,
+		cfg.LoadVocabTimeout,
 	)
 	handles := NewHandles(secrets, l, rooms)
 
 	shouldStop := make(chan struct{})
 	done := make(chan struct{})
 
-	go rooms.RunPinger(l, cfg.PollInterval, cfg.RunningAddr, shouldStop, done)
+	go rooms.RunPinger(l, cfg.WorkerPollInterval, cfg.WorkerPublicAddr, shouldStop, done)
 	go RunHttpClient(handles, secrets, l, cfg.RunningAddr, cfg.ShutdownTimeout, shouldStop, done)
 
 	shutdown := make(chan os.Signal, 1)

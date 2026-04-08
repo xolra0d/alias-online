@@ -12,6 +12,7 @@ type Postgres struct {
 	logger *slog.Logger
 }
 
+// NewPostgres creates new instance of postgres client.
 func NewPostgres(postgresUrl string, logger *slog.Logger) (*Postgres, error) {
 	db, err := pgxpool.New(context.Background(), postgresUrl)
 	if err != nil {
@@ -23,18 +24,18 @@ func NewPostgres(postgresUrl string, logger *slog.Logger) (*Postgres, error) {
 	}, nil
 }
 
+// Close closes postgres pool.
 func (p *Postgres) Close() {
 	p.db.Close()
 }
 
+// LoadVocabs loads vocabularies from postgres.
 func (p *Postgres) LoadVocabs(ctx context.Context) (map[string]Vocabulary, bool) {
-	const op = "main.LoadVocabs"
-
 	vocabs := map[string]Vocabulary{}
 	query := "SELECT language, primary_words, rude_words FROM vocabularies WHERE available = TRUE ORDER BY language"
 	rows, err := p.db.Query(ctx, query)
 	if err != nil {
-		p.logger.Error("failed to load available languages", "op", op, "err", err)
+		p.logger.Error("failed to load available languages", "err", err)
 		return vocabs, false
 	}
 	defer rows.Close()
@@ -43,7 +44,7 @@ func (p *Postgres) LoadVocabs(ctx context.Context) (map[string]Vocabulary, bool)
 		var primaryWords []string
 		var rudeWords []string
 		if err := rows.Scan(&language, &primaryWords, &rudeWords); err != nil {
-			p.logger.Error("failed to load vocabulary", op, "op", "err", err)
+			p.logger.Error("failed to load vocabulary", "err", err)
 			return vocabs, false
 		}
 		vocabs[language] = Vocabulary{primaryWords, rudeWords}

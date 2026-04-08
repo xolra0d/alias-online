@@ -1,7 +1,7 @@
 CREATE TABLE IF NOT EXISTS rooms (
 	id TEXT PRIMARY KEY,
 	admin TEXT NOT NULL references users(login),
-	seed INT NOT NULL,
+	seed BIGINT NOT NULL,
 	current_word_index INT NOT NULL DEFAULT 0,
 	current_player_login TEXT NOT NULL REFERENCES users(login),
 	game_state INT DEFAULT 0,

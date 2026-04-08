@@ -30,6 +30,7 @@ type RoomManager struct {
 	RetrieveActiveWorkersTimeout time.Duration
 }
 
+// NewManager creates new room manager.
 func NewManager(
 	database *Database,
 	logger *slog.Logger,
@@ -63,6 +64,7 @@ func NewManager(
 	}
 }
 
+// from all workers, returns only active ones with number of room loaded.
 func retrieveActiveWorkers(ctx context.Context, db *Database, WorkerExpiry time.Time) (map[string]*client, error) {
 	workers, err := db.GetAllWorkers(ctx)
 	if err != nil {
@@ -89,6 +91,7 @@ func retrieveActiveWorkers(ctx context.Context, db *Database, WorkerExpiry time.
 	return activeWorkers, nil
 }
 
+// ScanForNewWorkers retrieves active workers, removes loaded unactive ones and refreshes timeouts.
 func (m *RoomManager) ScanForNewWorkers() {
 	for {
 		newExp := time.Now().Add(m.WorkerExpiry)
@@ -143,6 +146,7 @@ func (m *RoomManager) ScanForNewWorkers() {
 	}
 }
 
+// StopScanForNewWorkers stops scan loop.
 func (m *RoomManager) StopScanForNewWorkers() {
 	m.logger.Info("stopping observation loop")
 	m.doneCancel()
@@ -150,10 +154,12 @@ func (m *RoomManager) StopScanForNewWorkers() {
 	m.logger.Info("stopped observation loop")
 }
 
+// SetWorkerActive sets worker active with timeout.
 func (m *RoomManager) SetWorkerActive(ctx context.Context, worker string) error {
 	return m.db.SetWorkerActive(ctx, worker, m.WorkerExpiry)
 }
 
+// FindMostFreeWorker returns worker with the least rooms loaded.
 func (m *RoomManager) FindMostFreeWorker() string {
 	bestIp := ""
 	lowestCount := 1 << 30
@@ -170,6 +176,7 @@ func (m *RoomManager) FindMostFreeWorker() string {
 	return bestIp
 }
 
+// FindBestWorker tries to reserve room with the optimal worker from loaded ones.
 func (m *RoomManager) FindBestWorker(ctx context.Context, roomId string) (string, error) {
 	optimal := m.FindMostFreeWorker()
 	worker, err := m.db.TryReserveRoom(ctx, roomId, optimal)
@@ -179,6 +186,7 @@ func (m *RoomManager) FindBestWorker(ctx context.Context, roomId string) (string
 	return worker, nil
 }
 
+// RegisterRoom reserves room, adds it to rooms of worker and returns worker. If room is reserved by other worker - returns that worker.
 func (m *RoomManager) RegisterRoom(ctx context.Context, roomId, workerIp string) (string, error) {
 	worker, err := m.db.TryReserveRoom(ctx, roomId, workerIp)
 	if err != nil {
@@ -201,10 +209,12 @@ func (m *RoomManager) RegisterRoom(ctx context.Context, roomId, workerIp string)
 	return worker, nil
 }
 
+// ProlongRoom prolongs lease of room for worker.
 func (m *RoomManager) ProlongRoom(ctx context.Context, roomId, workerIp string) error {
 	return m.db.ProlongRoom(ctx, roomId, workerIp, time.Second*30)
 }
 
+// ReleaseRoom removes room from workerIp pool of rooms.
 func (m *RoomManager) ReleaseRoom(ctx context.Context, roomId, workerIp string) error {
 	err := m.db.ReleaseRoom(ctx, roomId, workerIp)
 	if err != nil {
@@ -212,6 +222,7 @@ func (m *RoomManager) ReleaseRoom(ctx context.Context, roomId, workerIp string) 
 	}
 
 	m.lock.Lock()
+	m.logger.Info("debug", "map", m.workers, "roomId", roomId, "workerIp", workerIp)
 	m.workers[workerIp].roomCount--
 	m.lock.Unlock()
 
