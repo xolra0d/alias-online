@@ -53,4 +53,12 @@ Server message types:
  
 ## Docs
 
-[Backend docs](BACKEND.md)
+### Backend
+
+[Protos](backend/shared/proto/README.md)
+[Shared](backend/shared/pkg/README.md)
+[Service/MainGateway](backend/services/main/README.md)
+[Service/VocabManager](backend/services/vocab_manager/README.md)
+[Service/Auth](backend/services/auth/README.md)
+[Service/RoomManager](backend/services/room_manager/README.md)
+[Service/RoomWorker](backend/services/vocab_worker/README.md)
