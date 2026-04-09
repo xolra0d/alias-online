@@ -186,7 +186,7 @@ func (s *Secrets) VerifyPassword(secret, hash string) *Error {
 	case hashArgon2idName:
 		return s.verifyArgon2id(secret, h)
 	default:
-		s.logger.Error(op, "Invalid hash ID", "hash", hash)
+		s.logger.Error("Invalid hash ID", "hash", hash)
 		return NewError(ErrInternal, fmt.Errorf("invalid hash ID: %s", hash))
 	}
 }

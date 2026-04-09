@@ -33,7 +33,7 @@ func RunGrpcServer(vocabManager *VocabManager, logger *slog.Logger, runningAddr 
 	go func() {
 		logger.Info("starting GRPC server", "addr", runningAddr)
 		if err := s.Serve(lis); err != nil {
-			logger.Error("failed to serve: %v", err)
+			logger.Error("failed to serve", "err", err)
 		}
 	}()
 

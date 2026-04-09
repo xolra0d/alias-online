@@ -322,7 +322,7 @@ func (rooms *Rooms) UpdateToWebsocketsAndRedirect(w http.ResponseWriter, r *http
 	err = c.Write(writeCtx, websocket.MessageBinary, msg)
 	writeCancel()
 	if err != nil {
-		rooms.logger.Error("write error", "playerId", "msg", msg, "err", err)
+		rooms.logger.Error("write error", "msg", msg, "err", err)
 		return err
 	}
 	return nil

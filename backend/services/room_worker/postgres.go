@@ -54,7 +54,7 @@ func (p *Postgres) LoadRoom(ctx context.Context, roomId string, getVocab func(ct
 		&clock,
 	)
 	if err != nil {
-		p.logger.Error(op, "could not load rooms", "roomId", roomId, "err", err)
+		p.logger.Error("could not load rooms", "roomId", roomId, "err", err)
 		return nil, err
 	}
 
@@ -94,7 +94,7 @@ func (p *Postgres) LoadRoom(ctx context.Context, roomId string, getVocab func(ct
 		ORDER BY rp.turn_order ASC`
 	rows, err := p.db.Query(ctx, query, roomId)
 	if err != nil {
-		p.logger.Error(op, "failed to load rooms participants", "roomId", roomId, "err", err)
+		p.logger.Error("failed to load rooms participants", "roomId", roomId, "err", err)
 		return nil, err
 	}
 	defer rows.Close()
@@ -112,7 +112,7 @@ func (p *Postgres) LoadRoom(ctx context.Context, roomId string, getVocab func(ct
 		var name string
 		err = rows.Scan(&userLogin, &wordsTried, &wordsGuessed, &name)
 		if err != nil {
-			p.logger.Error(op, "failed to scan rooms participant", "roomId", roomId, "err", err)
+			p.logger.Error("failed to scan rooms participant", "roomId", roomId, "err", err)
 			return nil, err
 		}
 
@@ -140,20 +140,20 @@ func (p *Postgres) SaveRoom(ctx context.Context, r *Room) (err error) {
 
 	tx, err := p.db.Begin(ctx)
 	if err != nil {
-		p.logger.Error(op, "failed to begin transaction", "err", err, "roomId", r.Id)
+		p.logger.Error("failed to begin transaction", "err", err, "roomId", r.Id)
 		return err
 	}
 	defer func() {
 		if err != nil {
 			rollbackErr := tx.Rollback(ctx)
-			p.logger.Error(op, "failed to rollback transaction", "err", rollbackErr, "roomId", r.Id)
+			p.logger.Error("failed to rollback transaction", "err", rollbackErr, "roomId", r.Id)
 			return
 		}
 
 		commitErr := tx.Commit(ctx)
 		if commitErr != nil {
 			err = commitErr
-			p.logger.Error(op, "failed to commit transaction", "err", err, "roomId", r.Id)
+			p.logger.Error("failed to commit transaction", "err", err, "roomId", r.Id)
 		}
 	}()
 
@@ -183,7 +183,7 @@ func (p *Postgres) SaveRoom(ctx context.Context, r *Room) (err error) {
 		r.Config.Clock,
 	)
 	if err != nil {
-		p.logger.Error(op, "failed to upsert rooms", "err", err, "roomId", r.Id)
+		p.logger.Error("failed to upsert rooms", "err", err, "roomId", r.Id)
 		return err
 	}
 
@@ -205,13 +205,13 @@ func (p *Postgres) SaveRoom(ctx context.Context, r *Room) (err error) {
 	results := tx.SendBatch(ctx, batch)
 	for _, player := range r.Players {
 		if _, err = results.Exec(); err != nil {
-			p.logger.Error(op, "upsert participant error", "err", err, "roomId", r.Id, "playerId", player.Id)
+			p.logger.Error("upsert participant error", "err", err, "roomId", r.Id, "playerId", player.Id)
 			results.Close()
 			return err
 		}
 	}
 	if err = results.Close(); err != nil {
-		p.logger.Error(op, "failed to close batch results", "err", err, "roomId", r.Id)
+		p.logger.Error("failed to close batch results", "err", err, "roomId", r.Id)
 		return err
 	}
 	return nil
