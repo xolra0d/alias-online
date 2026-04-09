@@ -281,4 +281,3 @@ func TestPlaySuccessReturnsWorker(t *testing.T) {
 		t.Fatalf("unexpected worker payload: %#v", got)
 	}
 }
-

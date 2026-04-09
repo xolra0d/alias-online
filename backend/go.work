@@ -1,0 +1,10 @@
+go 1.26.1
+
+use (
+	./services/main
+	./services/room_manager
+	./services/room_worker
+	./services/auth
+	./services/vocab_manager
+	./shared
+)
