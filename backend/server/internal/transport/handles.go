@@ -81,7 +81,10 @@ func (h *Handles) AvailableLanguages(w http.ResponseWriter, _ *http.Request) {
 		return strings.Compare(a, b)
 	})
 
-	err := WriteJSON(w, http.StatusOK, P{"languages": languages})
+	err := WriteJSON(w, http.StatusOK, P{
+		"languages": languages,
+		"vocabs":    languages,
+	})
 	if err != nil {
 		h.logger.Error(op, "could not write response", "err", err)
 		return

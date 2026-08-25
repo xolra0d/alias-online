@@ -33,6 +33,14 @@ Communication:
 - FRONTEND - POST /api/protected/create-room ID RATE LIMITED > BACKEND > postgres 
 - FRONTEND <- GET /api/ws/:roomId -> BACKEND > cached // communication over Websockets
 
+`GET /api/available-vocabs` returns both `languages` and `vocabs` fields for compatibility.
+
+## Migrations
+
+There is an additional migration pair for vocabulary update notifications:
+- `migrations/postgresql/5_vocab_watcher_up.sql`
+- `migrations/postgresql/5_vocab_watcher_down.sql`
+
 ### WS messages
 
 Client message types:

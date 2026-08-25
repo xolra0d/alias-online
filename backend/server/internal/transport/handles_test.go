@@ -31,6 +31,7 @@ func TestAvailableLanguagesSortsEnglishFirstThenAscending(t *testing.T) {
 
 	var payload struct {
 		Languages []string `json:"languages"`
+		Vocabs    []string `json:"vocabs"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("failed to unmarshal response: %v", err)
@@ -39,5 +40,8 @@ func TestAvailableLanguagesSortsEnglishFirstThenAscending(t *testing.T) {
 	want := []string{"English", "Arabic", "French", "Zulu"}
 	if !reflect.DeepEqual(payload.Languages, want) {
 		t.Fatalf("expected languages %v, got %v", want, payload.Languages)
+	}
+	if !reflect.DeepEqual(payload.Vocabs, want) {
+		t.Fatalf("expected vocabs %v, got %v", want, payload.Vocabs)
 	}
 }
