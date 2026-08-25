@@ -1,20 +1,14 @@
-package main
+package database
 
 import (
 	crand "crypto/rand"
-	"crypto/rsa"
-	"crypto/x509"
+	"encoding/base32"
 	"encoding/base64"
-	"encoding/pem"
-	"errors"
-	"fmt"
-	"log/slog"
-	"os"
+	mrand "math/rand"
 	"strconv"
 	"strings"
-	"time"
 
-	"github.com/golang-jwt/jwt/v5"
+	"github.com/xolra0d/alias-online/internal/config"
 	"go.pact.im/x/option"
 	"go.pact.im/x/phcformat"
 	"go.pact.im/x/phcformat/encode"
@@ -22,52 +16,28 @@ import (
 )
 
 type Secrets struct {
-	logger *slog.Logger
+	logger *config.Logger
 
 	argon2idTime    uint32
 	argon2idMemory  uint32
 	argon2idThreads uint8
 	argon2idOutLen  uint32
-	privateKey      *rsa.PrivateKey
-}
-
-func loadPrivateKey(path string) (*rsa.PrivateKey, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	block, _ := pem.Decode(data)
-	k, err := x509.ParsePKCS8PrivateKey(block.Bytes)
-	if err != nil {
-		return nil, err
-	}
-	key, ok := k.(*rsa.PrivateKey)
-	if !ok {
-		return nil, fmt.Errorf("could not parse as rsa private key")
-	}
-	return key, nil
 }
 
 func NewSecrets(
-	logger *slog.Logger,
+	logger *config.Logger,
 	Argon2idTime uint32,
 	Argon2idMemory uint32,
 	Argon2idThreads uint8,
 	Argon2idOutLen uint32,
-	RsaPrivateKeyFilename string,
-) (*Secrets, error) {
-	key, err := loadPrivateKey(RsaPrivateKeyFilename)
-	if err != nil {
-		return nil, err
-	}
+) *Secrets {
 	return &Secrets{
 		logger:          logger,
 		argon2idTime:    Argon2idTime,
 		argon2idMemory:  Argon2idMemory,
 		argon2idThreads: Argon2idThreads,
 		argon2idOutLen:  Argon2idOutLen,
-		privateKey:      key,
-	}, nil
+	}
 }
 
 // hashSecret hashes any password with random salt and returns result in phcformat string.
@@ -184,99 +154,21 @@ func (s *Secrets) VerifyPassword(secret, hash string) bool {
 	}
 }
 
+// GenerateRoomId creates new 40 bit base32 roomId
+func (s *Secrets) GenerateRoomId() string {
+	data := [5]byte{}
+	_, _ = crand.Read(data[:]) // possible collision at ~1 million games.
+	return base32.StdEncoding.EncodeToString(data[:])
+}
+
+// GenerateName creates a new name for account in form `AdjectiveNoun(0-99)`.
+func (s *Secrets) GenerateName() string {
+	adjectives := []string{"Grumpy", "Sleepy", "Chaotic", "Spicy", "Wobbly", "Fluffy", "Sneaky"}
+	nouns := []string{"Waffle", "Penguin", "Muffin", "Wizard", "Noodle", "Taco", "Biscuit"}
+	return adjectives[mrand.Intn(len(adjectives))] + nouns[mrand.Intn(len(nouns))] + strconv.Itoa(mrand.Intn(100))
+}
+
 // GenerateSecretBase32 creates secure base32 secret.
 func (s *Secrets) GenerateSecretBase32() string {
 	return crand.Text()
-}
-
-type Credentials struct {
-	Name     *string `json:"name"`
-	Login    string  `json:"login"`
-	Password string  `json:"password"`
-}
-
-func (c *Credentials) ValidateForRegister() error {
-	if c.Name == nil {
-		return errors.New("missing name")
-	}
-	if len(*c.Name) == 0 || len(*c.Name) > 20 {
-		return fmt.Errorf("empty name")
-	}
-	if len(c.Login) < 8 || len(c.Login) > 20 { // todo: maybe check for eng + nums + `_` + few special only..
-		return fmt.Errorf("invalid login")
-	}
-	if len(c.Password) < 8 || len(c.Password) > 20 {
-		return fmt.Errorf("invalid password")
-	}
-
-	return nil
-}
-
-func (c *Credentials) ValidateForLogin() error {
-	if len(c.Login) < 8 || len(c.Login) > 20 { // todo: maybe check for eng + nums + `_` + few special only..
-		return fmt.Errorf("invalid login")
-	}
-	if len(c.Password) < 8 || len(c.Password) > 20 {
-		return fmt.Errorf("invalid password")
-	}
-
-	return nil
-}
-
-var (
-	ErrUnAuthorized = fmt.Errorf("unauthorized")
-)
-
-func (s *Secrets) NewJWT(login string, exp time.Time) (string, error) {
-	token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
-		"sub": login,
-		"iat": time.Now().Unix(),
-		"exp": exp.Unix(),
-	})
-
-	return token.SignedString(s.privateKey)
-}
-
-func (s *Secrets) ValidateJWT(tokenString string) (username string, err error) {
-	token, err := jwt.Parse(tokenString, func(t *jwt.Token) (any, error) {
-		if _, ok := t.Method.(*jwt.SigningMethodRSA); !ok {
-			s.logger.Error("unexpected signing method", "err", t.Header["alg"])
-			return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
-		}
-		return &s.privateKey.PublicKey, nil
-	})
-	if err != nil || token == nil || !token.Valid {
-		s.logger.Warn("invalid token", "err", err, "token", tokenString)
-		return "", err
-	}
-
-	claims, ok := token.Claims.(jwt.MapClaims)
-	if !ok {
-		return "", ErrUnAuthorized
-	}
-
-	sub, ok := claims["sub"].(string)
-	if !ok || sub == "" {
-		return "", ErrUnAuthorized
-	}
-
-	exp, ok := claims["exp"].(float64)
-	if !ok || exp == 0 || int64(exp) < time.Now().Unix() {
-		return "", ErrUnAuthorized
-	}
-
-	return sub, nil
-}
-
-func (s *Secrets) EncodeJWTPublicKey() (string, error) {
-	pubDER, err := x509.MarshalPKIXPublicKey(&s.privateKey.PublicKey)
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal public key: %w", err)
-	}
-	block := &pem.Block{
-		Type:  "PUBLIC KEY",
-		Bytes: pubDER,
-	}
-
-	return string(pem.EncodeToMemory(block)), nil
 }

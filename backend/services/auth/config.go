@@ -8,12 +8,13 @@ import (
 
 type ServerConfig struct {
 	// DATABASES
-	PostgresUrl        string        // Env name: `POSTGRES_URL`. PostgreSQL connection string. Default: none, will exit, if not set.
+	PostgresUrl        string        // Env name: `POSTGRES_URL`. PostgreSQL connection string. Default: none, will panic, if not set.
 	AddAccountTimeout  time.Duration // Env name: `ADD_ACCOUNT_TIMEOUT`. Max wait time for saving new account in seconds. Default: 10.
 	FindAccountTimeout time.Duration // Env name: `FIND_ACCOUNT_TIMEOUT`. Max wait time for finding account in seconds. Default: 10.
 
-	// GRPC SERVER
-	RunningAddr     string        // Env name: `RUNNING_ADDR`. Address to run web on. Default: `:8090`.
+	// HTTP
+	AllowedOrigins  string        // Env name: `ALLOWED_ORIGINS`. Origins to respond to (e.g., http://website.com:12), separated by comma. Default: none, will exit, if not set.
+	RunningAddr     string        // Env name: `RUNNING_ADDR`. Address to run web on. Default: `:8080`.
 	ShutdownTimeout time.Duration // Env name: `SHUTDOWN_TIMEOUT`. Time for transport server to shut down in seconds. Default: 10.
 
 	// SECURITY
@@ -21,8 +22,12 @@ type ServerConfig struct {
 	Argon2idMemory        uint32        // Env name: `ARGON2ID_MEMORY`. Amount of memory to use in bytes. Default: 65536.
 	Argon2idThreads       uint8         // Env name: `ARGON2ID_THREADS`. Degree of parallelism. Default: 1.
 	Argon2idOutLen        uint32        // Env name: `ARGON2ID_OUT_LEN`. Desired number of returned bytes. Default: 32.
-	JwtPrivateKeyFilename string        // Env name: `JWT_PRIVATE_KEY_FILENAME`. Path to private key used for creating JWT tokens. Default: none, will exit, if not set.
+	RSAPrivateKeyFilename string        // Env name: `RSA_PRIVATE_KEY_FILENAME`. Path to private key used for creating JWT tokens. Default: none, will exit, if not set.
 	JWTCookieTimeout      time.Duration // Env name: `JWT_COOKIE_TIMEOUT`. Time for JWT to expire in seconds. Default: 3600.
+	//JWTCookiePath         string        // Env name: `JWT_COOKIE_PATH`. Path param for JWT cookie. Default: "/".
+	//JWTCookieSecure       bool          // Env name: `JWT_COOKIE_SECURE`. Whether cookie should be stored as SECURE. Set false for dev (with http it will not set cookie), true for prod (https). Default: None, will exit, if not set.
+	//JWTCookieHTTPOnly     bool          // Env name: `JWT_COOKIE_HTTP_ONLY`. Cookies cannot be accessed by JavaScript. Default: true.
+	//JWTCookieDomain       string        // Env name: `JWT_COOKIE_DOMAIN`. Domain for cookie to be accessible. Set "localhost" for dev, and e.g., "xolra0d.com". Default: None, will exit, if not set.
 }
 
 func LoadServerConfig() *ServerConfig {
@@ -30,21 +35,27 @@ func LoadServerConfig() *ServerConfig {
 	addAccountTimeout := config.StringToSeconds("ADD_ACCOUNT_TIMEOUT", config.GetEnvOrFallback("ADD_ACCOUNT_TIMEOUT", "10"))
 	findAccountTimeout := config.StringToSeconds("FIND_ACCOUNT_TIMEOUT", config.GetEnvOrFallback("FIND_ACCOUNT_TIMEOUT", "10"))
 
-	runningAddr := config.GetEnvOrFallback("RUNNING_ADDR", ":8090")
+	allowedOrigins := config.GetEnvOrExit("ALLOWED_ORIGINS")
+	runningAddr := config.GetEnvOrFallback("RUNNING_ADDR", ":8080")
 	shutdownTimeout := config.StringToSeconds("SHUTDOWN_TIMEOUT", config.GetEnvOrFallback("SHUTDOWN_TIMEOUT", "10"))
 
 	agon2idTime := config.StringToUInt("ARGON2ID_TIME", config.GetEnvOrFallback("ARGON2ID_TIME", "2"))
 	agon2idMemory := config.StringToUInt("ARGON2ID_MEMORY", config.GetEnvOrFallback("ARGON2ID_MEMORY", "65536"))
 	agon2idThreads := config.StringToUInt("ARGON2ID_THREADS", config.GetEnvOrFallback("ARGON2ID_THREADS", "1"))
 	argon2idOutLen := config.StringToUInt("ARGON2ID_OUT_LEN", config.GetEnvOrFallback("ARGON2ID_OUT_LEN", "32"))
-	jwtPrivateKeyFilename := config.GetEnvOrExit("RSA_PRIVATE_KEY_FILENAME")
+	rsaPrivateKeyFilename := config.GetEnvOrExit("RSA_PRIVATE_KEY_FILENAME")
 	jwtCookieTimeout := config.StringToSeconds("JWT_COOKIE_TIMEOUT", config.GetEnvOrFallback("JWT_COOKIE_TIMEOUT", "3600"))
+	//jwtCookiePath := config.GetEnvOrFallback("JWT_COOKIE_PATH", "/")
+	//jwtCookieSecure := config.StringToBool("JWT_COOKIE_SECURE", config.GetEnvOrExit("JWT_COOKIE_SECURE"))
+	//jwtCookieHTTPOnly := config.StringToBool("JWT_COOKIE_HTTP_ONLY", config.GetEnvOrFallback("JWT_COOKIE_HTTP_ONLY", "true"))
+	//jwtCookieDomain := config.GetEnvOrExit("JWT_COOKIE_DOMAIN")
 
 	return &ServerConfig{
 		PostgresUrl:        postgresUrl,
 		AddAccountTimeout:  addAccountTimeout,
 		FindAccountTimeout: findAccountTimeout,
 
+		AllowedOrigins:  allowedOrigins,
 		RunningAddr:     runningAddr,
 		ShutdownTimeout: shutdownTimeout,
 
@@ -52,7 +63,11 @@ func LoadServerConfig() *ServerConfig {
 		Argon2idMemory:        uint32(agon2idMemory),
 		Argon2idThreads:       uint8(agon2idThreads),
 		Argon2idOutLen:        uint32(argon2idOutLen),
-		JwtPrivateKeyFilename: jwtPrivateKeyFilename,
+		RSAPrivateKeyFilename: rsaPrivateKeyFilename,
 		JWTCookieTimeout:      jwtCookieTimeout,
+		//JWTCookiePath:         jwtCookiePath,
+		//JWTCookieSecure:       jwtCookieSecure,
+		//JWTCookieHTTPOnly:     jwtCookieHTTPOnly,
+		//JWTCookieDomain:       jwtCookieDomain,
 	}
 }

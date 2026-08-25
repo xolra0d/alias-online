@@ -13,14 +13,13 @@ import (
 	"github.com/xolra0d/alias-online/shared/pkg/middleware"
 )
 
-func RunServer(mux *http.ServeMux, csrf, cors middleware.Middleware, logger *slog.Logger, runningAddr string, shutdownTimeout time.Duration) {
+func RunServer(mux *http.ServeMux, cors middleware.Middleware, logger *slog.Logger, runningAddr string, shutdownTimeout time.Duration) {
 	const op = "main.RunServer"
 
 	server := &http.Server{
 		Addr: runningAddr,
 		Handler: middleware.Chain(
 			mux,
-			csrf,
 			cors,
 			middleware.Logging(logger),
 		),
@@ -47,11 +46,4 @@ func RunServer(mux *http.ServeMux, csrf, cors middleware.Middleware, logger *slo
 	}
 
 	logger.Info("HTTP server stopped")
-}
-
-func IPRateLimiter(limit int, window time.Duration, cleanupEvery int, logger *slog.Logger) middleware.Middleware {
-	limiter := middleware.NewRateLimiter(limit, window, cleanupEvery)
-	return middleware.RequestRateLimiter(limiter, func(r *http.Request) string {
-		return ""
-	}, logger)
 }
